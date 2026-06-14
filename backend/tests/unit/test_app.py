@@ -8,4 +8,4 @@ def test_create_app_stores_settings_on_app_state() -> None:
     app = create_app()
 
     assert isinstance(app.state.settings, Settings)
-    assert app.state.settings.server_port == 8000
+    assert app.state.settings.api_port == 8000
