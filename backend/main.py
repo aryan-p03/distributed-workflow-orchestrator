@@ -9,7 +9,7 @@ def main() -> None:
         "backend.app:create_app",
         factory=True,
         host="0.0.0.0",
-        port=settings.server_port,
+        port=settings.api_port,
         reload=True,
     )
 
