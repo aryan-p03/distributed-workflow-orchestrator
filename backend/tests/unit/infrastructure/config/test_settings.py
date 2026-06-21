@@ -39,3 +39,41 @@ def test_settings_type_is_concrete() -> None:
     settings = get_settings()
 
     assert isinstance(settings, Settings)
+
+
+def test_schema_sync_on_startup_defaults_true() -> None:
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.schema_sync_on_startup is True
+
+
+def test_schema_sync_on_startup_reads_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SCHEMA_SYNC_ON_STARTUP", "false")
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.schema_sync_on_startup is False
+
+
+def test_celery_log_level_defaults_info() -> None:
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.celery_log_level == "INFO"
+
+
+def test_celery_log_level_reads_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CELERY_LOG_LEVEL", "DEBUG")
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.celery_log_level == "DEBUG"
