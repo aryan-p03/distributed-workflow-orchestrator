@@ -1,5 +1,5 @@
 
-.PHONY: help up up-build down logs logs-api logs-frontend logs-worker ps schema-sync restart restart-api restart-frontend restart-worker rebuild-api rebuild-frontend clean
+.PHONY: help up up-build down logs logs-api logs-frontend logs-worker ps restart restart-api restart-frontend restart-worker rebuild-api rebuild-frontend clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-20s %s\n", $$1, $$2}'
