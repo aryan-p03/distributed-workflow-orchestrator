@@ -29,21 +29,6 @@ services:
       retries: 10
       start_period: 5s
 
-  migrate:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
-    environment:
-      DATABASE_URL: postgresql://${DB_USER:-dwo_user}:${DB_PASSWORD:-dwo_password}@postgres:5432/${DB_NAME:-dwo}
-      REDIS_URL: redis://redis:6379/0
-    command: ["sh", "-c", "echo 'Migration placeholder: TODO: Use Alembic' && exit 0"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: "no"
-
   api:
     build:
       context: ./backend
@@ -51,6 +36,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${DB_USER:-dwo_user}:${DB_PASSWORD:-dwo_password}@postgres:5432/${DB_NAME:-dwo}
       REDIS_URL: redis://redis:6379/0
+      SCHEMA_SYNC_ON_STARTUP: ${SCHEMA_SYNC_ON_STARTUP:-true}
     command:
       [
         "sh",
@@ -72,8 +58,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
 
   worker:
     build:
@@ -82,11 +66,12 @@ services:
     environment:
       DATABASE_URL: postgresql://${DB_USER:-dwo_user}:${DB_PASSWORD:-dwo_password}@postgres:5432/${DB_NAME:-dwo}
       REDIS_URL: redis://redis:6379/0
+      CELERY_LOG_LEVEL: ${CELERY_LOG_LEVEL:-INFO}
     command:
       [
         "sh",
         "-c",
-        "echo 'Worker placeholder: TODO: Use Celery' && tail -f /dev/null",
+        "python -m celery -A backend.worker.celery_app:celery_app worker",
       ]
     volumes:
       - ./backend:/app
@@ -95,8 +80,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
+      api:
+        condition: service_healthy
 
   frontend:
     build:

@@ -1,5 +1,5 @@
 
-.PHONY: help up up-build down logs logs-api logs-frontend logs-worker ps migrate restart restart-api restart-frontend restart-worker rebuild-api rebuild-frontend clean
+.PHONY: help up up-build down logs logs-api logs-frontend logs-worker ps schema-sync restart restart-api restart-frontend restart-worker rebuild-api rebuild-frontend clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-20s %s\n", $$1, $$2}'
@@ -27,9 +27,6 @@ logs-worker: ## Tail worker logs
 
 ps: ## Show service status
 	docker compose ps
-
-migrate: ## Run the migration one-shot service
-	docker compose run --rm migrate
 
 restart: ## Restart core runtime services
 	docker compose restart api worker frontend
