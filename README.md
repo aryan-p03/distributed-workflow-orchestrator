@@ -40,6 +40,14 @@ All common tasks are available via [Makefile](Makefile):
 | `make ps` | Show service status |
 | `make clean` | Full teardown including volumes |
 
+## Documentation
+
+Project design and data model references live in [docs](docs):
+
+- [Architecture](docs/architecture.md)
+- [State Machine](docs/state-machine.md)
+- [Database Schema](docs/schema.md)
+
 ## CI
 
 Both services run automated checks on every pull request:
