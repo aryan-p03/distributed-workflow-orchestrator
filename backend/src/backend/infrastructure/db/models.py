@@ -1,31 +1,15 @@
 from __future__ import annotations
 
-import enum
 from datetime import UTC, datetime
 
 from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from backend.domain.workflow_state import TaskState, WorkflowState
+
 
 class Base(DeclarativeBase):
     pass
-
-
-class WorkflowState(enum.StrEnum):
-    CREATED = "created"
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
-
-
-class TaskState(enum.StrEnum):
-    CREATED = "created"
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
-    RETRYING = "retrying"
 
 
 def utcnow() -> datetime:

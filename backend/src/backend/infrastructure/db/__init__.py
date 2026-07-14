@@ -1,3 +1,3 @@
-from backend.infrastructure.db.models import Base
+from backend.infrastructure.db.models import Base, Task, TaskLog, User, Workflow
 
-__all__ = ["Base"]
+__all__ = ["Base", "User", "Workflow", "Task", "TaskLog"]
