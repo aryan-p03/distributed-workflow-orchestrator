@@ -82,6 +82,9 @@ def test_register_hashes_password(service: AuthService) -> None:
     user = service.register("alice@example.com", "alice", "s3cr3t")
 
     assert user.password_hash != "s3cr3t"
+    from backend.domain.auth import verify_password
+
+    assert verify_password("s3cr3t", user.password_hash) is True
 
 
 def test_register_duplicate_email_raises(service: AuthService) -> None:
@@ -165,6 +168,17 @@ def test_get_current_user_rejects_wrong_secret(service: AuthService) -> None:
     token = other_service.login("alice@example.com", "s3cr3t")
 
     with pytest.raises(TokenError):
+        service.get_current_user(token)
+
+
+def test_get_current_user_rejects_token_for_deleted_user(service: AuthService) -> None:
+    service.register("alice@example.com", "alice", "s3cr3t")
+    token = service.login("alice@example.com", "s3cr3t")
+
+    # Simulate a user removed after token issuance.
+    service._repo._store.clear()  # type: ignore[attr-defined]
+
+    with pytest.raises(AuthError, match="User not found"):
         service.get_current_user(token)
 
 

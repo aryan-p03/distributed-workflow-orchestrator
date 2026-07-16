@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from backend.domain.auth import AuthError, AuthUser, TokenError
 from backend.interfaces.http.routers.auth import create_auth_router
+from tests.conftest import SeededUser
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -102,6 +103,19 @@ def test_register_returns_409_on_duplicate() -> None:
     assert "Email is already registered" in resp.json()["detail"]
 
 
+def test_register_returns_422_for_short_password() -> None:
+    svc = MagicMock()
+
+    with TestClient(_app_with_service(svc)) as client:
+        resp = client.post(
+            "/auth/register",
+            json={"email": "alice@example.com", "username": "alice", "password": "short"},
+        )
+
+    assert resp.status_code == 422
+    svc.register.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Login
 # ---------------------------------------------------------------------------
@@ -135,6 +149,16 @@ def test_login_returns_401_for_bad_credentials() -> None:
 
     assert resp.status_code == 401
     assert resp.headers["www-authenticate"] == "Bearer"
+
+
+def test_login_returns_422_for_missing_fields() -> None:
+    svc = MagicMock()
+
+    with TestClient(_app_with_service(svc)) as client:
+        resp = client.post("/auth/login", json={"email": "alice@example.com"})
+
+    assert resp.status_code == 422
+    svc.login.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -206,3 +230,88 @@ def test_logout_returns_401_without_token() -> None:
         resp = client.post("/auth/logout")
 
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Integration-style auth flow coverage (real app wiring)
+# ---------------------------------------------------------------------------
+
+
+def test_auth_flow_register_login_me_logout(
+    test_client: TestClient, seeded_user: SeededUser
+) -> None:
+    register_resp = test_client.post(
+        "/auth/register",
+        json={"email": "newuser@example.com", "username": "newuser", "password": "secret123"},
+    )
+    assert register_resp.status_code == 201
+
+    login_resp = test_client.post(
+        "/auth/login",
+        json={"email": "newuser@example.com", "password": "secret123"},
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    me_resp = test_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_resp.status_code == 200
+    assert me_resp.json()["email"] == "newuser@example.com"
+
+    logout_resp = test_client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert logout_resp.status_code == 204
+
+
+def test_register_returns_409_for_duplicate_email_in_real_stack(
+    test_client: TestClient, seeded_user: SeededUser
+) -> None:
+    response = test_client.post(
+        "/auth/register",
+        json={"email": seeded_user.email, "username": "other-user", "password": "secret123"},
+    )
+
+    assert response.status_code == 409
+    assert "Email is already registered" in response.json()["detail"]
+
+
+def test_register_returns_409_for_duplicate_username_in_real_stack(
+    test_client: TestClient, seeded_user: SeededUser
+) -> None:
+    response = test_client.post(
+        "/auth/register",
+        json={
+            "email": "other@example.com",
+            "username": seeded_user.username,
+            "password": "secret123",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "Username is already taken" in response.json()["detail"]
+
+
+def test_me_returns_401_for_invalid_token_in_real_stack(test_client: TestClient) -> None:
+    response = test_client.get(
+        "/auth/me",
+        headers={"Authorization": "Bearer not-a-real-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid token"
+
+
+def test_login_returns_401_for_wrong_password_in_real_stack(
+    test_client: TestClient, seeded_user: SeededUser
+) -> None:
+    response = test_client.post(
+        "/auth/login",
+        json={"email": seeded_user.email, "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password"
