@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from backend.application.services.health_service import HealthService
 from backend.infrastructure.config import get_settings
@@ -23,6 +25,9 @@ def create_app() -> FastAPI:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = settings
@@ -35,11 +40,19 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            engine.dispose()
             logging.getLogger(__name__).info("Application shutdown complete")
 
     app = FastAPI(lifespan=lifespan)
 
     health_service = HealthService(database_url=settings.database_url, redis_url=settings.redis_url)
-    app.include_router(create_api_router(health_service))
+    app.include_router(
+        create_api_router(
+            health_service,
+            session_factory,
+            settings.jwt_secret,
+            settings.jwt_expires_seconds,
+        )
+    )
 
     return app
