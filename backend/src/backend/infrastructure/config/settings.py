@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     schema_sync_on_startup: bool = Field(default=True, validation_alias="SCHEMA_SYNC_ON_STARTUP")
+    jwt_secret: str = Field(default="change-me-in-production", validation_alias="JWT_SECRET")
+    jwt_expires_seconds: int = Field(default=3600, validation_alias="JWT_EXPIRES_SECONDS")
 
 
 @lru_cache(maxsize=1)
