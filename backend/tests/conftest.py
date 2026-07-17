@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ from tests.factories import create_user
 
 @dataclass(frozen=True)
 class SeededUser:
-    id: int
+    id: UUID
     email: str
     username: str
     password: str

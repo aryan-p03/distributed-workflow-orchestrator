@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
@@ -22,9 +23,10 @@ from tests.conftest import SeededUser
 # ---------------------------------------------------------------------------
 
 _FIXED_NOW = datetime(2026, 1, 1, tzinfo=UTC)
+_ALICE_ID = uuid4()
 
 _ALICE = AuthUser(
-    id=1,
+    id=_ALICE_ID,
     email="alice@example.com",
     username="alice",
     password_hash="hashed",
@@ -83,7 +85,7 @@ def test_register_returns_201_with_user_payload() -> None:
 
     assert resp.status_code == 201
     body = resp.json()
-    assert body["id"] == 1
+    assert body["id"] == str(_ALICE_ID)
     assert body["email"] == "alice@example.com"
     assert body["username"] == "alice"
     assert "password_hash" not in body

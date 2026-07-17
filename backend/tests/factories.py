@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -33,7 +34,7 @@ def create_user(
 def create_workflow(
     session: Session,
     *,
-    user_id: int,
+    user_id: UUID,
     name: str = "Sample workflow",
     state: WorkflowState = WorkflowState.CREATED,
     created_at: datetime = _DEFAULT_TIME,

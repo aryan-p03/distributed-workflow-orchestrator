@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -19,10 +20,9 @@ class FakeUserRepository(UserRepository):
     """Minimal in-memory stand-in; no database required."""
 
     def __init__(self) -> None:
-        self._store: dict[int, AuthUser] = {}
-        self._next_id = 1
+        self._store: dict[UUID, AuthUser] = {}
 
-    def get_by_id(self, user_id: int) -> AuthUser | None:
+    def get_by_id(self, user_id: UUID) -> AuthUser | None:
         return self._store.get(user_id)
 
     def get_by_email(self, email: str) -> AuthUser | None:
@@ -36,14 +36,13 @@ class FakeUserRepository(UserRepository):
 
     def create(self, email: str, username: str, password_hash: str) -> AuthUser:
         user = AuthUser(
-            id=self._next_id,
+            id=uuid4(),
             email=email,
             username=username,
             password_hash=password_hash,
             created_at=datetime.now(UTC),
         )
-        self._store[self._next_id] = user
-        self._next_id += 1
+        self._store[user.id] = user
         return user
 
 
@@ -220,16 +219,17 @@ _TOKEN_SECRET = "token-test-secret-key-at-least-32-bytes-long"
 def test_issue_and_verify_token_roundtrip() -> None:
     from backend.domain.auth import issue_token, verify_token
 
-    token = issue_token(user_id=42, secret=_TOKEN_SECRET, expires_seconds=60)
-    user_id = verify_token(token, _TOKEN_SECRET)
+    user_id = uuid4()
+    token = issue_token(user_id=user_id, secret=_TOKEN_SECRET, expires_seconds=60)
+    decoded_id = verify_token(token, _TOKEN_SECRET)
 
-    assert user_id == 42
+    assert decoded_id == user_id
 
 
 def test_verify_token_rejects_tampered_token() -> None:
     from backend.domain.auth import issue_token, verify_token
 
-    token = issue_token(user_id=1, secret=_TOKEN_SECRET, expires_seconds=60)
+    token = issue_token(user_id=uuid4(), secret=_TOKEN_SECRET, expires_seconds=60)
     tampered = token[:-4] + "XXXX"
 
     with pytest.raises(TokenError):
