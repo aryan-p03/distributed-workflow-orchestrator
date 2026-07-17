@@ -6,7 +6,7 @@ Transport concerns only — business logic lives in :class:`AuthService`.
 from collections.abc import Generator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -32,6 +32,25 @@ def create_auth_router(
 
     router = APIRouter(prefix="/auth", tags=["auth"])
 
+    cookie_name = "access_token"
+
+    def _extract_access_token(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None,
+    ) -> str:
+        if credentials is not None:
+            return credentials.credentials
+
+        cookie_token = request.cookies.get(cookie_name)
+        if cookie_token:
+            return cookie_token
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     def get_auth_service() -> Generator[AuthService]:
         session: Session = session_factory()
         try:
@@ -49,17 +68,13 @@ def create_auth_router(
             session.close()
 
     def get_current_user(
+        request: Request,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
         service: Annotated[AuthService, Depends(get_auth_service)],
     ) -> AuthUser:
-        if credentials is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authorization token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        token = _extract_access_token(request, credentials)
         try:
-            return service.get_current_user(credentials.credentials)
+            return service.get_current_user(token)
         except (TokenError, AuthError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,6 +103,7 @@ def create_auth_router(
     @router.post("/login", response_model=TokenResponse)
     def login(
         body: LoginRequest,
+        response: Response,
         service: Annotated[AuthService, Depends(get_auth_service)],
     ) -> TokenResponse:
         try:
@@ -98,6 +114,15 @@ def create_auth_router(
                 detail=str(exc),
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
+        response.set_cookie(
+            key=cookie_name,
+            value=token,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=jwt_expires_seconds,
+            path="/",
+        )
         return TokenResponse(access_token=token)
 
     @router.get("/me", response_model=UserResponse)
@@ -108,15 +133,13 @@ def create_auth_router(
 
     @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
     def logout(
+        request: Request,
+        response: Response,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
         service: Annotated[AuthService, Depends(get_auth_service)],
     ) -> None:
-        if credentials is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authorization token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        service.logout(credentials.credentials)
+        token = _extract_access_token(request, credentials)
+        service.logout(token)
+        response.delete_cookie(key=cookie_name, path="/")
 
     return router

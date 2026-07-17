@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -44,6 +45,17 @@ def create_app() -> FastAPI:
             logging.getLogger(__name__).info("Application shutdown complete")
 
     app = FastAPI(lifespan=lifespan)
+
+    allow_origins = [
+        origin.strip() for origin in settings.cors_allow_origins.split(",") if origin.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     health_service = HealthService(database_url=settings.database_url, redis_url=settings.redis_url)
     app.include_router(
