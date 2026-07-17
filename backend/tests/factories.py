@@ -57,6 +57,7 @@ def create_task(
     session: Session,
     *,
     workflow_id: int,
+    sequence: int = 1,
     name: str = "Sample task",
     task_type: str = "noop",
     state: TaskState = TaskState.CREATED,
@@ -67,6 +68,7 @@ def create_task(
 ) -> Task:
     task = Task(
         workflow_id=workflow_id,
+        sequence=sequence,
         name=name,
         task_type=task_type,
         state=state,
