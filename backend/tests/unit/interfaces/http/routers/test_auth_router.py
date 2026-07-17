@@ -137,6 +137,24 @@ def test_login_returns_bearer_token() -> None:
     assert body["token_type"] == "bearer"
 
 
+def test_login_sets_secure_http_only_cookie() -> None:
+    svc = MagicMock()
+    svc.login.return_value = "signed.jwt.token"
+
+    with TestClient(_app_with_service(svc)) as client:
+        resp = client.post(
+            "/auth/login",
+            json={"email": "alice@example.com", "password": "secret123"},
+        )
+
+    assert resp.status_code == 200
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "access_token=signed.jwt.token" in cookie_header
+    assert "HttpOnly" in cookie_header
+    assert "SameSite=strict" in cookie_header
+    assert "Secure" in cookie_header
+
+
 def test_login_returns_401_for_bad_credentials() -> None:
     svc = MagicMock()
     svc.login.side_effect = AuthError("Invalid email or password")
@@ -181,6 +199,33 @@ def test_me_returns_current_user_when_authenticated() -> None:
     svc.get_current_user.assert_called_once_with("valid.token")
 
 
+def test_me_accepts_cookie_when_header_is_missing() -> None:
+    svc = MagicMock()
+    svc.get_current_user.return_value = _ALICE
+
+    with TestClient(_app_with_service(svc)) as client:
+        client.cookies.set("access_token", "cookie.token")
+        resp = client.get("/auth/me")
+
+    assert resp.status_code == 200
+    svc.get_current_user.assert_called_once_with("cookie.token")
+
+
+def test_me_prefers_header_token_over_cookie_token() -> None:
+    svc = MagicMock()
+    svc.get_current_user.return_value = _ALICE
+
+    with TestClient(_app_with_service(svc)) as client:
+        client.cookies.set("access_token", "cookie.token")
+        resp = client.get(
+            "/auth/me",
+            headers={"Authorization": "Bearer header.token"},
+        )
+
+    assert resp.status_code == 200
+    svc.get_current_user.assert_called_once_with("header.token")
+
+
 def test_me_returns_401_without_token() -> None:
     svc = MagicMock()
 
@@ -221,6 +266,32 @@ def test_logout_returns_204_with_valid_token() -> None:
 
     assert resp.status_code == 204
     svc.logout.assert_called_once_with("valid.token")
+
+
+def test_logout_accepts_cookie_when_header_is_missing() -> None:
+    svc = MagicMock()
+
+    with TestClient(_app_with_service(svc)) as client:
+        client.cookies.set("access_token", "cookie.token")
+        resp = client.post("/auth/logout")
+
+    assert resp.status_code == 204
+    svc.logout.assert_called_once_with("cookie.token")
+
+
+def test_logout_clears_access_token_cookie() -> None:
+    svc = MagicMock()
+
+    with TestClient(_app_with_service(svc)) as client:
+        resp = client.post(
+            "/auth/logout",
+            headers={"Authorization": "Bearer valid.token"},
+        )
+
+    assert resp.status_code == 204
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "access_token=" in cookie_header
+    assert "Max-Age=0" in cookie_header
 
 
 def test_logout_returns_401_without_token() -> None:
@@ -265,6 +336,25 @@ def test_auth_flow_register_login_me_logout(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert logout_resp.status_code == 204
+
+
+def test_auth_flow_supports_cookie_based_me_request(
+    test_client: TestClient,
+    seeded_user: SeededUser,
+) -> None:
+    login_resp = test_client.post(
+        "/auth/login",
+        json={"email": seeded_user.email, "password": seeded_user.password},
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    me_resp = test_client.get(
+        "/auth/me",
+        headers={"Cookie": f"access_token={token}"},
+    )
+    assert me_resp.status_code == 200
+    assert me_resp.json()["email"] == seeded_user.email
 
 
 def test_register_returns_409_for_duplicate_email_in_real_stack(

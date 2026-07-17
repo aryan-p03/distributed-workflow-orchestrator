@@ -18,6 +18,7 @@ def test_create_app_stores_settings_on_app_state(monkeypatch: pytest.MonkeyPatch
     with TestClient(app):
         assert isinstance(app.state.settings, Settings)
         assert app.state.settings.api_port == 8000
+        assert app.state.settings.cors_allow_origins
 
 
 def test_health_endpoint_returns_ok_when_all_deps_healthy(
@@ -83,3 +84,26 @@ def test_create_app_fails_fast_when_database_check_fails(monkeypatch: pytest.Mon
     with pytest.raises(RuntimeError, match="database down"):
         with TestClient(app):
             pass
+
+
+def test_create_app_allows_cors_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.app.check_database_connection", lambda _url: None)
+    monkeypatch.setattr("backend.app.sync_database_schema", lambda _url: None)
+    monkeypatch.setattr("backend.app.check_redis_connection", lambda _url: None)
+
+    app = create_app()
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/auth/login",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert response.headers.get("access-control-allow-credentials") == "true"
