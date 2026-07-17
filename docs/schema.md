@@ -9,7 +9,7 @@ erDiagram
     TASK ||--o{ TASK_LOG : produces
 
     USER {
-        int id PK
+        uuid id PK
         string email UK
         string username UK
         string password_hash
@@ -18,7 +18,7 @@ erDiagram
 
     WORKFLOW {
         int id PK
-        int user_id FK
+        uuid user_id FK
         string name
         string state "created, queued, running, success, failed"
         timestamp created_at
@@ -28,6 +28,7 @@ erDiagram
     TASK {
         int id PK
         int workflow_id FK
+        int sequence
         string name
         string task_type "delay, url_check, csv_process, text_analyze"
         string state "created, queued, running, success, failed, retrying"
@@ -54,7 +55,7 @@ Registered users with authentication credentials.
 
 | Column | Type | Constraints | Notes |
 | -------- | ------ | ------------- | ------- |
-| id | int | PK, auto-increment | |
+| id | uuid | PK, generated via uuid4() | |
 | email | string(255) | NOT NULL, UNIQUE | Login identifier |
 | username | string(100) | NOT NULL, UNIQUE | Display name |
 | password_hash | string(255) | NOT NULL | Bcrypt hash, never plaintext |
@@ -71,7 +72,7 @@ Orchestration jobs created and owned by users.
 | Column | Type | Constraints | Notes |
 | -------- | ------ | ------------- | ------- |
 | id | int | PK, auto-increment | |
-| user_id | int | FK → users.id, NOT NULL | On delete: CASCADE |
+| user_id | uuid | FK → users.id, NOT NULL | On delete: CASCADE |
 | name | string(255) | NOT NULL | User-friendly name (e.g., "Process Batch 1") |
 | state | enum (WorkflowState) | NOT NULL, DEFAULT 'created' | Values: created, queued, running, success, failed |
 | created_at | timestamp (UTC) | NOT NULL, DEFAULT utcnow() | Immutable |
@@ -104,6 +105,7 @@ Individual units of work within a workflow. State transitions follow strict rule
 | -------- | ------ | ------------- | ------- |
 | id | int | PK, auto-increment | |
 | workflow_id | int | FK → workflows.id, NOT NULL | On delete: CASCADE |
+| sequence | int | NOT NULL | 1-based execution order within the workflow |
 | name | string(255) | NOT NULL | Task description (e.g., "Wait 3 seconds") |
 | task_type | string(100) | NOT NULL | Handler type: delay, url_check, csv_process, text_analyze |
 | state | enum (TaskState) | NOT NULL, DEFAULT 'created' | Values: created, queued, running, success, failed, retrying |
@@ -124,6 +126,7 @@ Individual units of work within a workflow. State transitions follow strict rule
 **Constraints:**
 
 - `ck_tasks_retry_count_non_negative`: `retry_count >= 0`
+- `ck_tasks_sequence_positive`: `sequence >= 1`
 
 **Indexes:**
 
@@ -135,6 +138,8 @@ Individual units of work within a workflow. State transitions follow strict rule
 
 - `workflow`: many-to-one with `workflows.id`
 - `task_logs`: one-to-many with `task_logs.task_id`, cascade delete
+
+Tasks are materialized and loaded in ascending `sequence` order for deterministic workflow execution.
 
 ### `task_logs`
 
