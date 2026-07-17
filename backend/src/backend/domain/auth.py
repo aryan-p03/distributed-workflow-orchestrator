@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import bcrypt
 import jwt
@@ -22,7 +23,7 @@ class TokenError(Exception):
 
 @dataclass(frozen=True)
 class AuthUser:
-    id: int
+    id: UUID
     email: str
     username: str
     password_hash: str
@@ -53,7 +54,7 @@ _SUBJECT_CLAIM = "sub"
 _EXPIRY_CLAIM = "exp"
 
 
-def issue_token(user_id: int, secret: str, expires_seconds: int) -> str:
+def issue_token(user_id: UUID, secret: str, expires_seconds: int) -> str:
     """Return a signed JWT encoding *user_id* as the subject."""
     payload = {
         _SUBJECT_CLAIM: str(user_id),
@@ -62,7 +63,7 @@ def issue_token(user_id: int, secret: str, expires_seconds: int) -> str:
     return jwt.encode(payload, secret, algorithm=_ALGORITHM)
 
 
-def verify_token(token: str, secret: str) -> int:
+def verify_token(token: str, secret: str) -> UUID:
     """Decode *token* and return the user id.
 
     Raises :class:`TokenError` for any invalid or expired token.
@@ -79,6 +80,6 @@ def verify_token(token: str, secret: str) -> int:
         raise TokenError("Token missing subject claim")
 
     try:
-        return int(subject)
+        return UUID(subject)
     except (ValueError, TypeError) as exc:
         raise TokenError("Token subject is not a valid user id") from exc
