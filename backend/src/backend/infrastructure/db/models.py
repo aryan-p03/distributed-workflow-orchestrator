@@ -82,6 +82,7 @@ class Workflow(Base):
     tasks: Mapped[list[Task]] = relationship(
         back_populates="workflow",
         cascade="all, delete-orphan",
+        order_by="Task.sequence",
     )
 
 
@@ -92,6 +93,7 @@ class Task(Base):
         Index("ix_tasks_state", "state"),
         Index("ix_tasks_workflow_state", "workflow_id", "state"),
         CheckConstraint("retry_count >= 0", name="ck_tasks_retry_count_non_negative"),
+        CheckConstraint("sequence >= 1", name="ck_tasks_sequence_positive"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -99,6 +101,7 @@ class Task(Base):
         ForeignKey("workflows.id", ondelete="CASCADE"),
         nullable=False,
     )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[TaskState] = mapped_column(
