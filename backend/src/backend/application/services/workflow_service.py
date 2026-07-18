@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.application.workflow_templates import (
@@ -17,7 +18,7 @@ from backend.domain.workflow_state import (
     can_transition_task,
     can_transition_workflow,
 )
-from backend.infrastructure.db.models import Task, User, Workflow
+from backend.infrastructure.db.models import Task, TaskLog, User, Workflow
 
 
 class WorkflowServiceError(ValueError):
@@ -30,6 +31,10 @@ class WorkflowNotFoundError(WorkflowServiceError):
 
 class WorkflowAuthorizationError(WorkflowServiceError):
     """Raised when a workflow operation is attempted by a non-owner."""
+
+
+class WorkflowTaskNotFoundError(WorkflowServiceError):
+    """Raised when a task cannot be found inside a workflow."""
 
 
 class WorkflowService:
@@ -104,11 +109,92 @@ class WorkflowService:
         self._session.refresh(workflow, attribute_names=["tasks"])
         return workflow
 
+    def list_workflows(
+        self,
+        *,
+        user_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[Workflow]:
+        return list(
+            self._session.execute(
+                select(Workflow)
+                .where(Workflow.user_id == user_id)
+                .order_by(Workflow.created_at.desc(), Workflow.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            .scalars()
+            .all()
+        )
+
+    def count_workflows(self, *, user_id: UUID) -> int:
+        return int(
+            self._session.execute(
+                select(func.count()).select_from(Workflow).where(Workflow.user_id == user_id)
+            ).scalar_one()
+        )
+
+    def get_workflow(self, *, user_id: UUID, workflow_id: int) -> Workflow:
+        workflow = self._session.get(Workflow, workflow_id)
+        if workflow is None:
+            raise WorkflowNotFoundError("Workflow not found")
+
+        if workflow.user_id != user_id:
+            raise WorkflowAuthorizationError("Cannot access another user's workflow")
+
+        self._session.refresh(workflow, attribute_names=["tasks"])
+        return workflow
+
+    def get_task(
+        self,
+        *,
+        user_id: UUID,
+        workflow_id: int,
+        task_id: int,
+    ) -> Task:
+        workflow = self.get_workflow(user_id=user_id, workflow_id=workflow_id)
+        task = next((item for item in workflow.tasks if item.id == task_id), None)
+        if task is None:
+            raise WorkflowTaskNotFoundError("Task not found")
+        return task
+
+    def list_task_logs(
+        self,
+        *,
+        user_id: UUID,
+        workflow_id: int,
+        task_id: int,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[TaskLog]:
+        task = self.get_task(user_id=user_id, workflow_id=workflow_id, task_id=task_id)
+        return list(
+            self._session.execute(
+                select(TaskLog)
+                .where(TaskLog.task_id == task.id)
+                .order_by(TaskLog.created_at.asc(), TaskLog.id.asc())
+                .limit(limit)
+                .offset(offset)
+            )
+            .scalars()
+            .all()
+        )
+
+    def count_task_logs(self, *, user_id: UUID, workflow_id: int, task_id: int) -> int:
+        task = self.get_task(user_id=user_id, workflow_id=workflow_id, task_id=task_id)
+        return int(
+            self._session.execute(
+                select(func.count()).select_from(TaskLog).where(TaskLog.task_id == task.id)
+            ).scalar_one()
+        )
+
 
 __all__ = [
     "WorkflowAuthorizationError",
     "WorkflowNotFoundError",
     "WorkflowService",
     "WorkflowServiceError",
+    "WorkflowTaskNotFoundError",
     "WorkflowTemplateError",
 ]

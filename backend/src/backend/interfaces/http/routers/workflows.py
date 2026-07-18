@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -12,10 +12,19 @@ from backend.application.services.workflow_service import (
     WorkflowNotFoundError,
     WorkflowService,
     WorkflowServiceError,
+    WorkflowTaskNotFoundError,
 )
 from backend.application.workflow_templates import WorkflowTemplateError
 from backend.domain.auth import AuthError, AuthUser, TokenError
 from backend.infrastructure.repositories.sql_user_repository import SqlUserRepository
+from backend.interfaces.http.schemas.workflow_read import (
+    TaskLogListResponse,
+    TaskLogResponse,
+    TaskReadResponse,
+    WorkflowListItemResponse,
+    WorkflowListResponse,
+    WorkflowReadResponse,
+)
 from backend.interfaces.http.schemas.workflows import (
     CreateWorkflowRequest,
     WorkflowResponse,
@@ -131,5 +140,94 @@ def create_workflow_router(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
         return WorkflowResponse.model_validate(workflow)
+
+    @router.get("", response_model=WorkflowListResponse)
+    def list_workflows(
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        current_user: AuthUser = Depends(get_current_user),
+        service: WorkflowService = Depends(get_workflow_service),
+    ) -> WorkflowListResponse:
+        items = service.list_workflows(user_id=current_user.id, limit=limit, offset=offset)
+        total = service.count_workflows(user_id=current_user.id)
+        return WorkflowListResponse(
+            items=[WorkflowListItemResponse.model_validate(item) for item in items],
+            limit=limit,
+            offset=offset,
+            total=total,
+        )
+
+    @router.get("/{workflow_id}", response_model=WorkflowReadResponse)
+    def get_workflow(
+        workflow_id: int,
+        current_user: AuthUser = Depends(get_current_user),
+        service: WorkflowService = Depends(get_workflow_service),
+    ) -> WorkflowReadResponse:
+        try:
+            workflow = service.get_workflow(user_id=current_user.id, workflow_id=workflow_id)
+        except WorkflowNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except WorkflowAuthorizationError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+        return WorkflowReadResponse.model_validate(workflow)
+
+    @router.get("/{workflow_id}/tasks/{task_id}", response_model=TaskReadResponse)
+    def get_workflow_task(
+        workflow_id: int,
+        task_id: int,
+        current_user: AuthUser = Depends(get_current_user),
+        service: WorkflowService = Depends(get_workflow_service),
+    ) -> TaskReadResponse:
+        try:
+            task = service.get_task(
+                user_id=current_user.id,
+                workflow_id=workflow_id,
+                task_id=task_id,
+            )
+        except WorkflowNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except WorkflowTaskNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except WorkflowAuthorizationError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+        return TaskReadResponse.model_validate(task)
+
+    @router.get("/{workflow_id}/tasks/{task_id}/logs", response_model=TaskLogListResponse)
+    def list_workflow_task_logs(
+        workflow_id: int,
+        task_id: int,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        current_user: AuthUser = Depends(get_current_user),
+        service: WorkflowService = Depends(get_workflow_service),
+    ) -> TaskLogListResponse:
+        try:
+            items = service.list_task_logs(
+                user_id=current_user.id,
+                workflow_id=workflow_id,
+                task_id=task_id,
+                limit=limit,
+                offset=offset,
+            )
+            total = service.count_task_logs(
+                user_id=current_user.id,
+                workflow_id=workflow_id,
+                task_id=task_id,
+            )
+        except WorkflowNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except WorkflowTaskNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except WorkflowAuthorizationError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+        return TaskLogListResponse(
+            items=[TaskLogResponse.model_validate(item) for item in items],
+            limit=limit,
+            offset=offset,
+            total=total,
+        )
 
     return router
