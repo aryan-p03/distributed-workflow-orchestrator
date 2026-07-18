@@ -44,12 +44,18 @@ def _find_dep_by_name(routes: list[Any], name: str) -> Any:
     return None
 
 
-def _workflow_record(*, workflow_id: int = 7, user_id: Any = _OWNER_ID) -> Any:
+def _workflow_record(
+    *,
+    workflow_id: int = 7,
+    user_id: Any = _OWNER_ID,
+    workflow_state: WorkflowState = WorkflowState.QUEUED,
+    task_state: TaskState = TaskState.QUEUED,
+) -> Any:
     return SimpleNamespace(
         id=workflow_id,
         user_id=user_id,
         name="Process Q1",
-        state=WorkflowState.QUEUED,
+        state=workflow_state,
         created_at=_FIXED_NOW,
         updated_at=_FIXED_NOW,
         tasks=[
@@ -59,7 +65,7 @@ def _workflow_record(*, workflow_id: int = 7, user_id: Any = _OWNER_ID) -> Any:
                 sequence=1,
                 name="Fetch",
                 task_type="document.fetch",
-                state=TaskState.QUEUED,
+                state=task_state,
                 retry_count=0,
                 result=None,
                 created_at=_FIXED_NOW,
@@ -93,7 +99,11 @@ def _app_with_services(*, current_user: AuthUser | None, workflow_service: Any) 
 
 def test_create_workflow_returns_201_and_delegates_to_service() -> None:
     workflow_svc = MagicMock()
-    workflow_svc.create_workflow.return_value = _workflow_record(user_id=_OWNER_ID)
+    workflow_svc.create_workflow.return_value = _workflow_record(
+        user_id=_OWNER_ID,
+        workflow_state=WorkflowState.CREATED,
+        task_state=TaskState.CREATED,
+    )
 
     with TestClient(
         _app_with_services(current_user=_OWNER, workflow_service=workflow_svc)
@@ -114,7 +124,8 @@ def test_create_workflow_returns_201_and_delegates_to_service() -> None:
     assert resp.status_code == 201
     body = resp.json()
     assert body["id"] == 7
-    assert body["state"] == "queued"
+    assert body["state"] == "created"
+    assert body["tasks"][0]["state"] == "created"
     workflow_svc.create_workflow.assert_called_once_with(
         user_id=_OWNER_ID,
         template_name="document_processing",
@@ -208,6 +219,21 @@ def test_workflow_write_endpoints_require_authentication() -> None:
 
     assert create_resp.status_code == 401
     assert run_resp.status_code == 401
+
+
+def test_workflow_read_endpoints_require_authentication() -> None:
+    workflow_svc = MagicMock()
+
+    with TestClient(_app_with_services(current_user=None, workflow_service=workflow_svc)) as client:
+        list_resp = client.get("/workflows")
+        detail_resp = client.get("/workflows/1")
+        task_resp = client.get("/workflows/1/tasks/1")
+        logs_resp = client.get("/workflows/1/tasks/1/logs")
+
+    assert list_resp.status_code == 401
+    assert detail_resp.status_code == 401
+    assert task_resp.status_code == 401
+    assert logs_resp.status_code == 401
 
 
 def test_list_workflows_returns_paged_items() -> None:
@@ -356,6 +382,12 @@ def test_workflow_create_and_run_in_real_stack(
         },
     )
     assert create_resp.status_code == 201
+    assert create_resp.json()["state"] == "created"
+    assert [task["state"] for task in create_resp.json()["tasks"]] == [
+        "created",
+        "created",
+        "created",
+    ]
     workflow_id = create_resp.json()["id"]
 
     run_resp = authenticated_client.client.post(
@@ -364,6 +396,51 @@ def test_workflow_create_and_run_in_real_stack(
     )
     assert run_resp.status_code == 202
     assert run_resp.json()["state"] == "queued"
+
+
+def test_workflow_create_initializes_empty_logs_in_real_stack(
+    authenticated_client: AuthenticatedClient,
+) -> None:
+    create_resp = authenticated_client.client.post(
+        "/workflows",
+        headers=authenticated_client.auth_headers,
+        json={
+            "template_name": "release_pipeline",
+            "payload": {
+                "service_name": "api",
+                "release_version": "2026.07.18",
+                "environment": "staging",
+            },
+        },
+    )
+    assert create_resp.status_code == 201
+    body = create_resp.json()
+    task_id = body["tasks"][0]["id"]
+
+    logs_resp = authenticated_client.client.get(
+        f"/workflows/{body['id']}/tasks/{task_id}/logs",
+        headers=authenticated_client.auth_headers,
+    )
+
+    assert body["name"] == "Deploy api 2026.07.18"
+    assert body["tasks"][0]["retry_count"] == 0
+    assert body["tasks"][0]["result"] is None
+    assert logs_resp.status_code == 200
+    assert logs_resp.json()["items"] == []
+    assert logs_resp.json()["total"] == 0
+
+
+def test_create_workflow_returns_422_for_invalid_template_in_real_stack(
+    authenticated_client: AuthenticatedClient,
+) -> None:
+    resp = authenticated_client.client.post(
+        "/workflows",
+        headers=authenticated_client.auth_headers,
+        json={"template_name": "invalid", "payload": {}},
+    )
+
+    assert resp.status_code == 422
+    assert "Unsupported workflow template" in resp.json()["detail"]
 
 
 def test_non_owner_cannot_run_workflow_in_real_stack(
@@ -406,6 +483,38 @@ def test_non_owner_cannot_run_workflow_in_real_stack(
         headers={"Authorization": f"Bearer {intruder_token}"},
     )
     assert run_resp.status_code == 403
+
+
+def test_illegal_second_run_returns_409_in_real_stack(
+    authenticated_client: AuthenticatedClient,
+) -> None:
+    create_resp = authenticated_client.client.post(
+        "/workflows",
+        headers=authenticated_client.auth_headers,
+        json={
+            "template_name": "document_processing",
+            "payload": {
+                "document_name": "Q3 Statement",
+                "source_uri": "s3://incoming/q3.pdf",
+                "destination_uri": "s3://processed/q3.json",
+            },
+        },
+    )
+    assert create_resp.status_code == 201
+    workflow_id = create_resp.json()["id"]
+
+    first_run_resp = authenticated_client.client.post(
+        f"/workflows/{workflow_id}/run",
+        headers=authenticated_client.auth_headers,
+    )
+    second_run_resp = authenticated_client.client.post(
+        f"/workflows/{workflow_id}/run",
+        headers=authenticated_client.auth_headers,
+    )
+
+    assert first_run_resp.status_code == 202
+    assert second_run_resp.status_code == 409
+    assert "cannot be queued" in second_run_resp.json()["detail"]
 
 
 def test_workflow_read_endpoints_in_real_stack(

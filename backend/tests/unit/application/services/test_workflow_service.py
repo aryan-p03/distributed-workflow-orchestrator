@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.application.services.workflow_service import WorkflowService, WorkflowServiceError
 from backend.application.workflow_templates import WorkflowTemplateError
 from backend.domain.workflow_state import TaskState, WorkflowState
-from backend.infrastructure.db.models import Task, Workflow
+from backend.infrastructure.db.models import Task, TaskLog, Workflow
 from tests.factories import create_task, create_task_log, create_user, create_workflow
 
 
@@ -62,6 +62,52 @@ def test_create_workflow_persists_workflow_and_ordered_tasks(
     ]
 
 
+def test_create_workflow_uses_default_name_and_initializes_empty_task_logs(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    user = create_user(db_session, email="owner@example.com", username="owner")
+
+    workflow = workflow_service.create_workflow(
+        user_id=user.id,
+        template_name="release_pipeline",
+        payload={
+            "service_name": "api",
+            "release_version": "2026.07.18",
+            "environment": "staging",
+        },
+    )
+    db_session.commit()
+
+    persisted_tasks = (
+        db_session.execute(
+            select(Task).where(Task.workflow_id == workflow.id).order_by(Task.sequence)
+        )
+        .scalars()
+        .all()
+    )
+    task_logs = (
+        db_session.execute(
+            select(TaskLog)
+            .join(Task, TaskLog.task_id == Task.id)
+            .where(Task.workflow_id == workflow.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    assert workflow.name == "Deploy api 2026.07.18"
+    assert workflow.state == WorkflowState.CREATED
+    assert [task.state for task in persisted_tasks] == [
+        TaskState.CREATED,
+        TaskState.CREATED,
+        TaskState.CREATED,
+    ]
+    assert [task.retry_count for task in persisted_tasks] == [0, 0, 0]
+    assert [task.result for task in persisted_tasks] == [None, None, None]
+    assert task_logs == []
+
+
 def test_create_workflow_rejects_unknown_template(
     db_session: Session,
     workflow_service: WorkflowService,
@@ -93,6 +139,25 @@ def test_create_workflow_rejects_invalid_payload(
                 "document_name": "Q1 Statement",
                 "source_uri": "s3://incoming/q1.pdf",
                 "destination_uri": "s3://processed/q1.json",
+            },
+        )
+
+
+def test_create_workflow_rejects_unexpected_payload_fields(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    user = create_user(db_session, email="owner@example.com", username="owner")
+
+    with pytest.raises(WorkflowTemplateError, match="Unexpected workflow template fields"):
+        workflow_service.create_workflow(
+            user_id=user.id,
+            template_name="document_processing",
+            payload={
+                "document_name": "Q1 Statement",
+                "source_uri": "s3://incoming/q1.pdf",
+                "destination_uri": "s3://processed/q1.json",
+                "priority": "high",
             },
         )
 
@@ -174,6 +239,34 @@ def test_run_workflow_rejects_invalid_workflow_state(
 
     with pytest.raises(WorkflowServiceError, match="cannot be queued"):
         workflow_service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+
+
+def test_run_workflow_rejects_invalid_task_state_without_partial_mutation(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    workflow = create_workflow(db_session, user_id=owner.id, state=WorkflowState.CREATED)
+    create_task(db_session, workflow_id=workflow.id, sequence=1, state=TaskState.CREATED)
+    create_task(db_session, workflow_id=workflow.id, sequence=2, state=TaskState.RUNNING)
+    db_session.commit()
+
+    with pytest.raises(WorkflowServiceError, match="cannot be queued"):
+        workflow_service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+
+    db_session.rollback()
+    persisted_workflow = db_session.get(Workflow, workflow.id)
+    persisted_tasks = (
+        db_session.execute(
+            select(Task).where(Task.workflow_id == workflow.id).order_by(Task.sequence)
+        )
+        .scalars()
+        .all()
+    )
+
+    assert persisted_workflow is not None
+    assert persisted_workflow.state == WorkflowState.CREATED
+    assert [task.state for task in persisted_tasks] == [TaskState.CREATED, TaskState.RUNNING]
 
 
 def test_list_workflows_returns_only_owned_items_with_pagination(
