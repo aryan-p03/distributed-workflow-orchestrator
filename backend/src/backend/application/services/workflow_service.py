@@ -11,12 +11,25 @@ from backend.application.workflow_templates import (
     WorkflowTemplateError,
     resolve_workflow_template,
 )
-from backend.domain.workflow_state import TaskState, WorkflowState
+from backend.domain.workflow_state import (
+    TaskState,
+    WorkflowState,
+    can_transition_task,
+    can_transition_workflow,
+)
 from backend.infrastructure.db.models import Task, User, Workflow
 
 
 class WorkflowServiceError(ValueError):
     """Raised when workflow creation cannot proceed."""
+
+
+class WorkflowNotFoundError(WorkflowServiceError):
+    """Raised when a workflow cannot be found."""
+
+
+class WorkflowAuthorizationError(WorkflowServiceError):
+    """Raised when a workflow operation is attempted by a non-owner."""
 
 
 class WorkflowService:
@@ -60,5 +73,42 @@ class WorkflowService:
         self._session.refresh(workflow, attribute_names=["tasks"])
         return workflow
 
+    def run_workflow(
+        self,
+        *,
+        user_id: UUID,
+        workflow_id: int,
+    ) -> Workflow:
+        workflow = self._session.get(Workflow, workflow_id)
+        if workflow is None:
+            raise WorkflowNotFoundError("Workflow not found")
 
-__all__ = ["WorkflowService", "WorkflowServiceError", "WorkflowTemplateError"]
+        if workflow.user_id != user_id:
+            raise WorkflowAuthorizationError("Cannot run another user's workflow")
+
+        if not can_transition_workflow(workflow.state, WorkflowState.QUEUED):
+            raise WorkflowServiceError(
+                f"Workflow cannot be queued from state '{workflow.state.value}'"
+            )
+
+        workflow.state = WorkflowState.QUEUED
+        for task in workflow.tasks:
+            if not can_transition_task(task.state, TaskState.QUEUED):
+                raise WorkflowServiceError(
+                    f"Task {task.id} cannot be queued from state '{task.state.value}'"
+                )
+            task.state = TaskState.QUEUED
+
+        self._session.flush()
+        self._session.refresh(workflow)
+        self._session.refresh(workflow, attribute_names=["tasks"])
+        return workflow
+
+
+__all__ = [
+    "WorkflowAuthorizationError",
+    "WorkflowNotFoundError",
+    "WorkflowService",
+    "WorkflowServiceError",
+    "WorkflowTemplateError",
+]
