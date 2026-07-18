@@ -10,7 +10,7 @@ from backend.application.services.workflow_service import WorkflowService, Workf
 from backend.application.workflow_templates import WorkflowTemplateError
 from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.infrastructure.db.models import Task, Workflow
-from tests.factories import create_task, create_user, create_workflow
+from tests.factories import create_task, create_task_log, create_user, create_workflow
 
 
 @pytest.fixture()
@@ -174,3 +174,73 @@ def test_run_workflow_rejects_invalid_workflow_state(
 
     with pytest.raises(WorkflowServiceError, match="cannot be queued"):
         workflow_service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+
+
+def test_list_workflows_returns_only_owned_items_with_pagination(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    other = create_user(db_session, email="other@example.com", username="other")
+    own_first = create_workflow(db_session, user_id=owner.id, name="Owner A")
+    own_second = create_workflow(db_session, user_id=owner.id, name="Owner B")
+    create_workflow(db_session, user_id=other.id, name="Other C")
+    db_session.commit()
+
+    listed = workflow_service.list_workflows(user_id=owner.id, limit=1, offset=0)
+    total = workflow_service.count_workflows(user_id=owner.id)
+
+    assert total == 2
+    assert len(listed) == 1
+    assert listed[0].id in {own_first.id, own_second.id}
+    assert listed[0].user_id == owner.id
+
+
+def test_get_workflow_rejects_non_owner(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    intruder = create_user(db_session, email="intruder@example.com", username="intruder")
+    workflow = create_workflow(db_session, user_id=owner.id)
+    db_session.commit()
+
+    with pytest.raises(WorkflowServiceError, match="another user's workflow"):
+        workflow_service.get_workflow(user_id=intruder.id, workflow_id=workflow.id)
+
+
+def test_get_task_and_list_logs_return_expected_records(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    workflow = create_workflow(db_session, user_id=owner.id)
+    first_task = create_task(db_session, workflow_id=workflow.id, sequence=1, name="First")
+    second_task = create_task(db_session, workflow_id=workflow.id, sequence=2, name="Second")
+    create_task_log(db_session, task_id=second_task.id, message="queued")
+    create_task_log(db_session, task_id=second_task.id, message="running")
+    db_session.commit()
+
+    task = workflow_service.get_task(
+        user_id=owner.id,
+        workflow_id=workflow.id,
+        task_id=second_task.id,
+    )
+    logs = workflow_service.list_task_logs(
+        user_id=owner.id,
+        workflow_id=workflow.id,
+        task_id=second_task.id,
+        limit=10,
+        offset=0,
+    )
+    total = workflow_service.count_task_logs(
+        user_id=owner.id,
+        workflow_id=workflow.id,
+        task_id=second_task.id,
+    )
+
+    assert task.id == second_task.id
+    assert task.sequence == 2
+    assert first_task.id != task.id
+    assert [item.message for item in logs] == ["queued", "running"]
+    assert total == 2
