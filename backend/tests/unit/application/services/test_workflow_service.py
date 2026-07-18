@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from backend.application.services.workflow_service import WorkflowService, WorkflowServiceError
 from backend.application.workflow_templates import WorkflowTemplateError
+from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.infrastructure.db.models import Task, Workflow
-from tests.factories import create_user
+from tests.factories import create_task, create_user, create_workflow
 
 
 @pytest.fixture()
@@ -109,3 +110,67 @@ def test_create_workflow_rejects_missing_authenticated_user(
                 "environment": "staging",
             },
         )
+
+
+def test_run_workflow_queues_workflow_and_tasks(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    workflow = create_workflow(db_session, user_id=owner.id, state=WorkflowState.CREATED)
+    first_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=1,
+        state=TaskState.CREATED,
+    )
+    second_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=2,
+        state=TaskState.CREATED,
+    )
+    db_session.commit()
+
+    queued_workflow = workflow_service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+    db_session.commit()
+
+    assert queued_workflow.state == WorkflowState.QUEUED
+
+    persisted_tasks = (
+        db_session.execute(
+            select(Task).where(Task.workflow_id == workflow.id).order_by(Task.sequence)
+        )
+        .scalars()
+        .all()
+    )
+
+    assert [task.id for task in persisted_tasks] == [first_task.id, second_task.id]
+    assert [task.state for task in persisted_tasks] == [TaskState.QUEUED, TaskState.QUEUED]
+
+
+def test_run_workflow_rejects_non_owner(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    intruder = create_user(db_session, email="intruder@example.com", username="intruder")
+    workflow = create_workflow(db_session, user_id=owner.id)
+    create_task(db_session, workflow_id=workflow.id, state=TaskState.CREATED)
+    db_session.commit()
+
+    with pytest.raises(WorkflowServiceError, match="another user's workflow"):
+        workflow_service.run_workflow(user_id=intruder.id, workflow_id=workflow.id)
+
+
+def test_run_workflow_rejects_invalid_workflow_state(
+    db_session: Session,
+    workflow_service: WorkflowService,
+) -> None:
+    owner = create_user(db_session, email="owner@example.com", username="owner")
+    workflow = create_workflow(db_session, user_id=owner.id, state=WorkflowState.RUNNING)
+    create_task(db_session, workflow_id=workflow.id, state=TaskState.RUNNING)
+    db_session.commit()
+
+    with pytest.raises(WorkflowServiceError, match="cannot be queued"):
+        workflow_service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
