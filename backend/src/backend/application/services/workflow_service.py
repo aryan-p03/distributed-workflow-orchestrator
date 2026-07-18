@@ -96,12 +96,14 @@ class WorkflowService:
                 f"Workflow cannot be queued from state '{workflow.state.value}'"
             )
 
-        workflow.state = WorkflowState.QUEUED
         for task in workflow.tasks:
             if not can_transition_task(task.state, TaskState.QUEUED):
                 raise WorkflowServiceError(
                     f"Task {task.id} cannot be queued from state '{task.state.value}'"
                 )
+
+        workflow.state = WorkflowState.QUEUED
+        for task in workflow.tasks:
             task.state = TaskState.QUEUED
 
         self._session.flush()
