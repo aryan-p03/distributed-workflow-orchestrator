@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.application.services.task_execution_service import TaskExecutionService
 from backend.application.services.workflow_progression_service import WorkflowProgressionService
+from backend.domain.workflow_state import TaskState
 from backend.infrastructure.config import get_settings
-from backend.infrastructure.db.models import Task, TaskLog
-from backend.worker.celery_app import celery_app
+from backend.infrastructure.db.models import Task, TaskLog, Workflow
+from backend.worker.celery_app import celery_app, enqueue_task_execution
 from backend.worker.handlers import dispatch_task_handler
 
 
@@ -44,6 +45,7 @@ def execute_task(
         )
         session.flush()
         result: dict[str, Any]
+        resolution = None
 
         try:
             handler_result = dispatch_task_handler(
@@ -86,7 +88,19 @@ def execute_task(
                     message=result["message"],
                 )
 
-        progression_service.apply_progression(workflow=task.workflow)
+        workflow_state = progression_service.apply_progression(workflow=task.workflow)
+        if not progression_service.is_terminal_state(workflow_state):
+            if resolution is not None and resolution.retry_scheduled and resolution.backoff_seconds:
+                enqueue_task_execution(
+                    task_id=task.id,
+                    payload=None,
+                    countdown_seconds=resolution.backoff_seconds,
+                )
+            elif result["status"] == "success":
+                next_task = _find_first_queued_task(workflow=task.workflow)
+                if next_task is not None:
+                    enqueue_task_execution(task_id=next_task.id, payload=None)
+
         session.commit()
         return result
     finally:
@@ -95,6 +109,13 @@ def execute_task(
 
 def _append_task_log(*, session: Session, task_id: int, message: str, level: str) -> None:
     session.add(TaskLog(task_id=task_id, message=message, level=level))
+
+
+def _find_first_queued_task(*, workflow: Workflow) -> Task | None:
+    for queued_task in sorted(workflow.tasks, key=lambda item: item.sequence):
+        if queued_task.state == TaskState.QUEUED:
+            return queued_task
+    return None
 
 
 @lru_cache(maxsize=4)

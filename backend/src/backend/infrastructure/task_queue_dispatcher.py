@@ -13,8 +13,17 @@ class CeleryTaskQueueDispatcher:
         *,
         task_id: int,
         payload: Mapping[str, object] | None = None,
+        countdown_seconds: int | None = None,
     ) -> None:
-        enqueue_task_execution(task_id=task_id, payload=payload)
+        if countdown_seconds is None:
+            enqueue_task_execution(task_id=task_id, payload=payload)
+            return
+
+        enqueue_task_execution(
+            task_id=task_id,
+            payload=payload,
+            countdown_seconds=countdown_seconds,
+        )
 
 
 __all__ = ["CeleryTaskQueueDispatcher"]

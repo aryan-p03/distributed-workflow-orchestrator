@@ -15,6 +15,7 @@ class TaskQueueDispatcher(Protocol):
         *,
         task_id: int,
         payload: Mapping[str, object] | None = None,
+        countdown_seconds: int | None = None,
     ) -> None:
         """Publish a runnable task to background execution."""
 

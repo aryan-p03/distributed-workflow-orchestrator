@@ -11,6 +11,10 @@ from backend.infrastructure.db.models import Workflow
 class WorkflowProgressionService:
     """Computes and applies workflow progression based on task outcomes."""
 
+    @staticmethod
+    def is_terminal_state(state: WorkflowState) -> bool:
+        return state in {WorkflowState.SUCCESS, WorkflowState.FAILED}
+
     def apply_progression(self, *, workflow: Workflow) -> WorkflowState:
         target_state = self._compute_target_state(workflow=workflow)
         if workflow.state == target_state:

@@ -22,7 +22,16 @@ def enqueue_task_execution(
     *,
     task_id: int,
     payload: Mapping[str, object] | None = None,
+    countdown_seconds: int | None = None,
 ) -> str:
     """Publish a task execution request to the worker queue."""
-    result = celery_app.send_task("worker.execute_task", args=[task_id, payload])
+    send_kwargs: dict[str, object] = {}
+    if countdown_seconds is not None:
+        send_kwargs["countdown"] = countdown_seconds
+
+    result = celery_app.send_task(
+        "worker.execute_task",
+        args=[task_id, payload],
+        **send_kwargs,
+    )
     return str(result.id)
