@@ -331,6 +331,7 @@ def test_run_workflow_second_attempt_does_not_dispatch_again(
 
     first_run = service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
     assert first_run.state == WorkflowState.QUEUED
+    db_session.commit()
 
     with pytest.raises(WorkflowServiceError, match="cannot be queued"):
         service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
