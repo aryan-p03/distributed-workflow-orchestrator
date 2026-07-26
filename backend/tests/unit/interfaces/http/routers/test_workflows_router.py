@@ -398,6 +398,51 @@ def test_workflow_create_and_run_in_real_stack(
     assert run_resp.json()["state"] == "queued"
 
 
+def test_workflow_run_publishes_first_task_once_in_real_stack(
+    authenticated_client: AuthenticatedClient,
+    monkeypatch: Any,
+) -> None:
+    dispatched_task_ids: list[int] = []
+
+    def _capture_enqueue(*, task_id: int, payload: dict[str, object] | None = None) -> str:
+        dispatched_task_ids.append(task_id)
+        return f"queued-{task_id}"
+
+    monkeypatch.setattr(
+        "backend.infrastructure.task_queue_dispatcher.enqueue_task_execution",
+        _capture_enqueue,
+    )
+
+    create_resp = authenticated_client.client.post(
+        "/workflows",
+        headers=authenticated_client.auth_headers,
+        json={
+            "template_name": "release_pipeline",
+            "payload": {
+                "service_name": "api",
+                "release_version": "2026.07.26",
+                "environment": "staging",
+            },
+        },
+    )
+    assert create_resp.status_code == 201
+    workflow_id = create_resp.json()["id"]
+    first_task_id = create_resp.json()["tasks"][0]["id"]
+
+    first_run_resp = authenticated_client.client.post(
+        f"/workflows/{workflow_id}/run",
+        headers=authenticated_client.auth_headers,
+    )
+    second_run_resp = authenticated_client.client.post(
+        f"/workflows/{workflow_id}/run",
+        headers=authenticated_client.auth_headers,
+    )
+
+    assert first_run_resp.status_code == 202
+    assert second_run_resp.status_code == 409
+    assert dispatched_task_ids == [first_task_id]
+
+
 def test_workflow_create_initializes_empty_logs_in_real_stack(
     authenticated_client: AuthenticatedClient,
 ) -> None:

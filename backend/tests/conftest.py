@@ -136,6 +136,10 @@ def test_client(
     monkeypatch.setattr("backend.app.check_database_connection", lambda _url: None)
     monkeypatch.setattr("backend.app.check_redis_connection", lambda _url: None)
     monkeypatch.setattr("backend.app.sync_database_schema", lambda _url: None)
+    monkeypatch.setattr(
+        "backend.infrastructure.task_queue_dispatcher.enqueue_task_execution",
+        lambda *, task_id, payload=None: f"test-enqueue-{task_id}",
+    )
 
     app = create_app()
     with TestClient(app) as client:

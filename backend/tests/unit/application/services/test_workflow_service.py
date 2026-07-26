@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,19 @@ from backend.application.workflow_templates import WorkflowTemplateError
 from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.infrastructure.db.models import Task, TaskLog, Workflow
 from tests.factories import create_task, create_task_log, create_user, create_workflow
+
+
+class _RecordingDispatcher:
+    def __init__(self) -> None:
+        self.task_ids: list[int] = []
+
+    def dispatch_task(
+        self,
+        *,
+        task_id: int,
+        payload: Mapping[str, object] | None = None,
+    ) -> None:
+        self.task_ids.append(task_id)
 
 
 @pytest.fixture()
@@ -267,6 +281,60 @@ def test_run_workflow_rejects_invalid_task_state_without_partial_mutation(
     assert persisted_workflow is not None
     assert persisted_workflow.state == WorkflowState.CREATED
     assert [task.state for task in persisted_tasks] == [TaskState.CREATED, TaskState.RUNNING]
+
+
+def test_run_workflow_dispatches_first_queued_task_once(
+    db_session: Session,
+) -> None:
+    owner = create_user(db_session, email="dispatch-owner@example.com", username="dispatch-owner")
+    workflow = create_workflow(db_session, user_id=owner.id, state=WorkflowState.CREATED)
+    first_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=1,
+        state=TaskState.CREATED,
+    )
+    create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=2,
+        state=TaskState.CREATED,
+    )
+    db_session.commit()
+
+    dispatcher = _RecordingDispatcher()
+    service = WorkflowService(db_session, task_dispatcher=dispatcher)
+
+    queued_workflow = service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+    db_session.commit()
+
+    assert queued_workflow.state == WorkflowState.QUEUED
+    assert dispatcher.task_ids == [first_task.id]
+
+
+def test_run_workflow_second_attempt_does_not_dispatch_again(
+    db_session: Session,
+) -> None:
+    owner = create_user(db_session, email="rerun-owner@example.com", username="rerun-owner")
+    workflow = create_workflow(db_session, user_id=owner.id, state=WorkflowState.CREATED)
+    first_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=1,
+        state=TaskState.CREATED,
+    )
+    db_session.commit()
+
+    dispatcher = _RecordingDispatcher()
+    service = WorkflowService(db_session, task_dispatcher=dispatcher)
+
+    first_run = service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+    assert first_run.state == WorkflowState.QUEUED
+
+    with pytest.raises(WorkflowServiceError, match="cannot be queued"):
+        service.run_workflow(user_id=owner.id, workflow_id=workflow.id)
+
+    assert dispatcher.task_ids == [first_task.id]
 
 
 def test_list_workflows_returns_only_owned_items_with_pagination(
