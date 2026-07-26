@@ -41,6 +41,12 @@ class _DispatchRecorder:
         ("url_check", "Check https://example.com", {"url": "https://example.com"}),
         ("csv_process", "name,score\nalpha,10\nbeta,20", {"csv_text": "name,score\nalpha,10"}),
         ("text_analyze", "Analyze this text", {"text": "Hello world. Testing now!"}),
+        ("document.fetch", "Fetch Q1 Statement", {}),
+        ("document.transform", "Transform Q1 Statement", {}),
+        ("document.publish", "Publish to s3://processed/q1.json", {}),
+        ("release.validate", "Validate api", {}),
+        ("release.deploy", "Deploy to staging", {}),
+        ("release.smoke_test", "Smoke test api", {}),
     ],
 )
 def test_execute_task_dispatches_supported_handlers(
