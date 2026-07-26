@@ -19,6 +19,7 @@ from backend.application.workflow_templates import WorkflowTemplateError
 from backend.domain.auth import AuthUser
 from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.interfaces.http.routers.workflows import create_workflow_router
+from backend.worker.tasks import execute_task
 from tests.conftest import AuthenticatedClient
 from tests.factories import create_task, create_task_log, create_workflow
 
@@ -396,6 +397,49 @@ def test_workflow_create_and_run_in_real_stack(
     )
     assert run_resp.status_code == 202
     assert run_resp.json()["state"] == "queued"
+
+
+def test_api_created_workflow_reaches_success_through_worker_path(
+    authenticated_client: AuthenticatedClient,
+) -> None:
+    create_resp = authenticated_client.client.post(
+        "/workflows",
+        headers=authenticated_client.auth_headers,
+        json={
+            "template_name": "document_processing",
+            "payload": {
+                "document_name": "Q4 Statement",
+                "source_uri": "s3://incoming/q4.pdf",
+                "destination_uri": "s3://processed/q4.json",
+            },
+        },
+    )
+    assert create_resp.status_code == 201
+    workflow_id = create_resp.json()["id"]
+
+    run_resp = authenticated_client.client.post(
+        f"/workflows/{workflow_id}/run",
+        headers=authenticated_client.auth_headers,
+    )
+    assert run_resp.status_code == 202
+    queued_tasks = sorted(run_resp.json()["tasks"], key=lambda item: item["sequence"])
+
+    for task in queued_tasks:
+        result = execute_task(task["id"], payload={})
+        assert result["status"] == "success"
+
+    detail_resp = authenticated_client.client.get(
+        f"/workflows/{workflow_id}",
+        headers=authenticated_client.auth_headers,
+    )
+    assert detail_resp.status_code == 200
+    body = detail_resp.json()
+    assert body["state"] == "success"
+    assert [task["state"] for task in body["tasks"]] == [
+        "success",
+        "success",
+        "success",
+    ]
 
 
 def test_workflow_run_publishes_first_task_once_in_real_stack(
