@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from backend.application.services.task_dispatch_service import (
@@ -54,6 +54,12 @@ class WorkflowService:
         self._dispatch_service = (
             WorkflowTaskDispatchService(task_dispatcher) if task_dispatcher is not None else None
         )
+        if self._dispatch_service is not None and not self._session.info.get(
+            "workflow_dispatch_hooks_installed", False
+        ):
+            event.listen(self._session, "after_commit", self._dispatch_after_commit)
+            event.listen(self._session, "after_rollback", self._clear_pending_dispatches)
+            self._session.info["workflow_dispatch_hooks_installed"] = True
 
     def create_workflow(
         self,
@@ -120,10 +126,28 @@ class WorkflowService:
 
         self._session.flush()
         if self._dispatch_service is not None:
-            self._dispatch_service.dispatch_first_queued_task(workflow=workflow)
+            first_task = self._dispatch_service.find_first_queued_task(workflow=workflow)
+            if first_task is not None:
+                self._enqueue_task_dispatch(task_id=first_task.id)
         self._session.refresh(workflow)
         self._session.refresh(workflow, attribute_names=["tasks"])
         return workflow
+
+    def _enqueue_task_dispatch(self, *, task_id: int) -> None:
+        pending = self._session.info.setdefault("workflow_pending_dispatch_task_ids", [])
+        if task_id not in pending:
+            pending.append(task_id)
+
+    def _dispatch_after_commit(self, session: Session) -> None:
+        if self._dispatch_service is None:
+            return
+
+        pending_task_ids = session.info.pop("workflow_pending_dispatch_task_ids", [])
+        for task_id in pending_task_ids:
+            self._dispatch_service.dispatch_task_by_id(task_id=task_id)
+
+    def _clear_pending_dispatches(self, session: Session) -> None:
+        session.info.pop("workflow_pending_dispatch_task_ids", None)
 
     def list_workflows(
         self,

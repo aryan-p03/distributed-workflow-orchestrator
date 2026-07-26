@@ -26,13 +26,31 @@ class WorkflowTaskDispatchService:
     def __init__(self, dispatcher: TaskQueueDispatcher) -> None:
         self._dispatcher = dispatcher
 
-    def dispatch_first_queued_task(self, *, workflow: Workflow) -> Task | None:
+    def dispatch_task_by_id(
+        self,
+        *,
+        task_id: int,
+        payload: Mapping[str, object] | None = None,
+        countdown_seconds: int | None = None,
+    ) -> None:
+        self._dispatcher.dispatch_task(
+            task_id=task_id,
+            payload=payload,
+            countdown_seconds=countdown_seconds,
+        )
+
+    def find_first_queued_task(self, *, workflow: Workflow) -> Task | None:
         for task in sorted(workflow.tasks, key=lambda item: item.sequence):
-            if task.state != TaskState.QUEUED:
-                continue
-            self._dispatcher.dispatch_task(task_id=task.id, payload=None)
-            return task
+            if task.state == TaskState.QUEUED:
+                return task
         return None
+
+    def dispatch_first_queued_task(self, *, workflow: Workflow) -> Task | None:
+        task = self.find_first_queued_task(workflow=workflow)
+        if task is None:
+            return None
+        self.dispatch_task_by_id(task_id=task.id, payload=None)
+        return task
 
 
 __all__ = [
