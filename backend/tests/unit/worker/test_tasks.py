@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.domain.workflow_state import TaskState
-from backend.infrastructure.db.models import Task, TaskLog
+from backend.domain.workflow_state import TaskState, WorkflowState
+from backend.infrastructure.db.models import Task, TaskLog, Workflow
 from backend.worker.tasks import execute_task
 from tests.factories import create_task, create_user, create_workflow
 
@@ -28,7 +28,7 @@ def test_execute_task_dispatches_supported_handlers(
     payload: dict[str, object],
 ) -> None:
     user = create_user(db_session)
-    workflow = create_workflow(db_session, user_id=user.id)
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
     task = create_task(
         db_session,
         workflow_id=workflow.id,
@@ -49,6 +49,10 @@ def test_execute_task_dispatches_supported_handlers(
     assert persisted_task.result is not None
     assert json.loads(persisted_task.result)["status"] == "success"
 
+    persisted_workflow = db_session.get(Workflow, workflow.id)
+    assert persisted_workflow is not None
+    assert persisted_workflow.state == WorkflowState.SUCCESS
+
     logs = list(
         db_session.execute(
             select(TaskLog).where(TaskLog.task_id == task.id).order_by(TaskLog.id.asc())
@@ -62,9 +66,9 @@ def test_execute_task_dispatches_supported_handlers(
     assert logs[1].level == "INFO"
 
 
-def test_execute_task_marks_failed_for_unknown_task_type(db_session: Session) -> None:
+def test_execute_task_schedules_retry_for_unknown_task_type(db_session: Session) -> None:
     user = create_user(db_session, email="unknown-type@example.com", username="unknown-type")
-    workflow = create_workflow(db_session, user_id=user.id)
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
     task = create_task(
         db_session,
         workflow_id=workflow.id,
@@ -78,11 +82,18 @@ def test_execute_task_marks_failed_for_unknown_task_type(db_session: Session) ->
 
     assert result["status"] == "failed"
     assert "Unsupported task type" in result["message"]
+    assert result["data"]["retry_scheduled"] is True
+    assert result["data"]["next_backoff_seconds"] == 5
 
     db_session.expire_all()
     persisted_task = db_session.get(Task, task.id)
     assert persisted_task is not None
-    assert persisted_task.state == TaskState.FAILED
+    assert persisted_task.state == TaskState.QUEUED
+    assert persisted_task.retry_count == 1
+
+    persisted_workflow = db_session.get(Workflow, workflow.id)
+    assert persisted_workflow is not None
+    assert persisted_workflow.state == WorkflowState.RUNNING
 
     logs = list(
         db_session.execute(
@@ -92,7 +103,36 @@ def test_execute_task_marks_failed_for_unknown_task_type(db_session: Session) ->
         .all()
     )
     assert len(logs) == 2
-    assert logs[1].level == "ERROR"
+    assert logs[1].level == "WARNING"
+
+
+def test_execute_task_marks_failed_when_retry_budget_exhausted(db_session: Session) -> None:
+    user = create_user(db_session, email="retry-exhausted@example.com", username="retry-exhausted")
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
+    task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Unsupported task",
+        task_type="unsupported",
+        state=TaskState.QUEUED,
+        retry_count=2,
+    )
+    db_session.commit()
+
+    result = execute_task(task.id, payload={})
+
+    assert result["status"] == "failed"
+    assert result["data"]["retry_scheduled"] is False
+
+    db_session.expire_all()
+    persisted_task = db_session.get(Task, task.id)
+    assert persisted_task is not None
+    assert persisted_task.state == TaskState.FAILED
+    assert persisted_task.retry_count == 2
+
+    persisted_workflow = db_session.get(Workflow, workflow.id)
+    assert persisted_workflow is not None
+    assert persisted_workflow.state == WorkflowState.FAILED
 
 
 def test_execute_task_rejects_invalid_transition_state(db_session: Session) -> None:
@@ -101,7 +141,7 @@ def test_execute_task_rejects_invalid_transition_state(db_session: Session) -> N
         email="bad-transition@example.com",
         username="bad-transition",
     )
-    workflow = create_workflow(db_session, user_id=user.id)
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
     task = create_task(
         db_session,
         workflow_id=workflow.id,
