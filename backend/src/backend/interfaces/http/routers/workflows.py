@@ -17,6 +17,7 @@ from backend.application.services.workflow_service import (
 from backend.application.workflow_templates import WorkflowTemplateError
 from backend.domain.auth import AuthError, AuthUser, TokenError
 from backend.infrastructure.repositories.sql_user_repository import SqlUserRepository
+from backend.infrastructure.task_queue_dispatcher import CeleryTaskQueueDispatcher
 from backend.interfaces.http.schemas.workflow_read import (
     TaskLogListResponse,
     TaskLogResponse,
@@ -81,7 +82,7 @@ def create_workflow_router(
     def get_workflow_service(
         session: Session = Depends(get_db_session),
     ) -> WorkflowService:
-        return WorkflowService(session)
+        return WorkflowService(session, task_dispatcher=CeleryTaskQueueDispatcher())
 
     def get_current_user(
         request: Request,

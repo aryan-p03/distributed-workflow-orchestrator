@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from celery import Celery  # type: ignore[import-untyped]
 
 from backend.infrastructure.config import get_settings
@@ -14,3 +16,13 @@ celery_app.conf.task_track_started = True
 celery_app.conf.broker_connection_retry_on_startup = True
 celery_app.conf.worker_log_level = settings.celery_log_level.upper()
 celery_app.autodiscover_tasks(["backend.worker"])
+
+
+def enqueue_task_execution(
+    *,
+    task_id: int,
+    payload: Mapping[str, object] | None = None,
+) -> str:
+    """Publish a task execution request to the worker queue."""
+    result = celery_app.send_task("worker.execute_task", args=[task_id, payload])
+    return str(result.id)

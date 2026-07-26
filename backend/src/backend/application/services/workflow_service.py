@@ -8,6 +8,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.application.services.task_dispatch_service import (
+    TaskQueueDispatcher,
+    WorkflowTaskDispatchService,
+)
 from backend.application.workflow_templates import (
     WorkflowTemplateError,
     resolve_workflow_template,
@@ -40,8 +44,16 @@ class WorkflowTaskNotFoundError(WorkflowServiceError):
 class WorkflowService:
     """Orchestrates workflow creation from predefined templates."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        task_dispatcher: TaskQueueDispatcher | None = None,
+    ) -> None:
         self._session = session
+        self._dispatch_service = (
+            WorkflowTaskDispatchService(task_dispatcher) if task_dispatcher is not None else None
+        )
 
     def create_workflow(
         self,
@@ -107,6 +119,8 @@ class WorkflowService:
             task.state = TaskState.QUEUED
 
         self._session.flush()
+        if self._dispatch_service is not None:
+            self._dispatch_service.dispatch_first_queued_task(workflow=workflow)
         self._session.refresh(workflow)
         self._session.refresh(workflow, attribute_names=["tasks"])
         return workflow
