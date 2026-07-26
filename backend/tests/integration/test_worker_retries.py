@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +12,27 @@ from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.infrastructure.db.models import Task, TaskLog, Workflow
 from backend.worker.tasks import execute_task
 from tests.factories import create_task, create_user, create_workflow
+
+
+class _DispatchRecorder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object | None]] = []
+
+    def __call__(
+        self,
+        *,
+        task_id: int,
+        payload: Mapping[str, object] | None = None,
+        countdown_seconds: int | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "task_id": task_id,
+                "payload": payload,
+                "countdown_seconds": countdown_seconds,
+            }
+        )
+        return f"queued-{task_id}"
 
 
 def test_task_fail_then_retry_then_success(db_session: Session) -> None:
@@ -169,3 +192,59 @@ def test_duplicate_delivery_does_not_corrupt_terminal_state(db_session: Session)
     final_workflow = db_session.get(Workflow, workflow.id)
     assert final_workflow is not None
     assert final_workflow.state == WorkflowState.SUCCESS
+
+
+def test_retryable_failure_schedules_same_task_with_backoff(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _DispatchRecorder()
+    monkeypatch.setattr("backend.worker.tasks.enqueue_task_execution", recorder)
+
+    user = create_user(db_session, email="retry-chain@example.com", username="retry-chain")
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
+    task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Unsupported task",
+        task_type="unsupported",
+        state=TaskState.QUEUED,
+        sequence=1,
+    )
+    db_session.commit()
+
+    result = execute_task(task.id, payload={})
+    assert result["data"]["retry_scheduled"] is True
+    assert result["data"]["next_backoff_seconds"] == 5
+    assert recorder.calls == [
+        {
+            "task_id": task.id,
+            "payload": None,
+            "countdown_seconds": 5,
+        }
+    ]
+
+
+def test_terminal_failure_does_not_schedule_additional_dispatch(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _DispatchRecorder()
+    monkeypatch.setattr("backend.worker.tasks.enqueue_task_execution", recorder)
+
+    user = create_user(db_session, email="terminal-chain@example.com", username="terminal-chain")
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
+    task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Unsupported task",
+        task_type="unsupported",
+        state=TaskState.QUEUED,
+        sequence=1,
+        retry_count=2,
+    )
+    db_session.commit()
+
+    result = execute_task(task.id, payload={})
+    assert result["data"]["retry_scheduled"] is False
+    assert recorder.calls == []

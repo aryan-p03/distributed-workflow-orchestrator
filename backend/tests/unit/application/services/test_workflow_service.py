@@ -23,6 +23,7 @@ class _RecordingDispatcher:
         *,
         task_id: int,
         payload: Mapping[str, object] | None = None,
+        countdown_seconds: int | None = None,
     ) -> None:
         self.task_ids.append(task_id)
 

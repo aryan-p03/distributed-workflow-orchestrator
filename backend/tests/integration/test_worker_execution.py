@@ -3,13 +3,36 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
+import pytest
 from sqlalchemy.orm import Session
 
 from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.infrastructure.db.models import Task, Workflow
 from backend.worker.tasks import execute_task
 from tests.factories import create_task, create_user, create_workflow
+
+
+class _DispatchRecorder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object | None]] = []
+
+    def __call__(
+        self,
+        *,
+        task_id: int,
+        payload: Mapping[str, object] | None = None,
+        countdown_seconds: int | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "task_id": task_id,
+                "payload": payload,
+                "countdown_seconds": countdown_seconds,
+            }
+        )
+        return f"queued-{task_id}"
 
 
 def test_single_task_workflow_reaches_success(db_session: Session) -> None:
@@ -93,3 +116,43 @@ def test_multi_task_workflow_stays_running_until_all_tasks_complete(
     final_task2 = db_session.get(Task, task2.id)
     assert final_task1 is not None and final_task1.state == TaskState.SUCCESS
     assert final_task2 is not None and final_task2.state == TaskState.SUCCESS
+
+
+def test_multi_task_success_auto_dispatches_follow_up_task(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Successful completion auto-dispatches the next queued task in sequence."""
+    recorder = _DispatchRecorder()
+    monkeypatch.setattr("backend.worker.tasks.enqueue_task_execution", recorder)
+
+    user = create_user(db_session, email="exec-chain@example.com", username="exec-chain")
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
+    first_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Wait 1 second",
+        task_type="delay",
+        state=TaskState.QUEUED,
+        sequence=1,
+    )
+    second_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Check https://example.com",
+        task_type="url_check",
+        state=TaskState.QUEUED,
+        sequence=2,
+    )
+    db_session.commit()
+
+    result = execute_task(first_task.id, {"seconds": 1})
+    assert result["status"] == "success"
+
+    assert recorder.calls == [
+        {
+            "task_id": second_task.id,
+            "payload": None,
+            "countdown_seconds": None,
+        }
+    ]

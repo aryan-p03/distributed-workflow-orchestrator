@@ -115,6 +115,14 @@ def isolated_redis() -> Iterator[InMemoryRedis]:
     redis.flushdb()
 
 
+@pytest.fixture(autouse=True)
+def stub_worker_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "backend.worker.tasks.enqueue_task_execution",
+        lambda *, task_id, payload=None, countdown_seconds=None: f"test-enqueue-{task_id}",
+    )
+
+
 @pytest.fixture()
 def seeded_user(db_session: Session) -> SeededUser:
     password = "secret123"
