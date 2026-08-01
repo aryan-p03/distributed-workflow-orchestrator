@@ -1,26 +1,30 @@
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+import { AuthProvider } from "@/features/auth/context/auth-context"
+import { AuthGuard } from "@/components/auth-guard"
+import { LoginPage } from "@/features/auth/pages/login-page"
+import { RegisterPage } from "@/features/auth/pages/register-page"
+import { ProtectedLayout } from "./protected-layout"
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <div className="min-h-screen bg-muted flex items-center justify-center">
-      <Card className="w-96 border-dashed">
-        <CardHeader className="items-center text-center">
-          <CardTitle>Distributed Workflow Orchestrator</CardTitle>
-          <CardDescription>
-            This is a placeholder. The real UI hasn't been built yet.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-center">
-          <Button onClick={() => setCount(count + 1)} variant="outline">
-            Clicked {count} {count === 1 ? "time" : "times"}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route element={<AuthGuard />}>
+            <Route element={<ProtectedLayout />}>
+              <Route index element={<Navigate to="/workflows" replace />} />
+              <Route
+                path="/workflows"
+                element={<div className="p-6 text-muted-foreground">Workflows — coming soon.</div>}
+              />
+            </Route>
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 

@@ -1,26 +1,30 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
+
+// Minimal mocks for the full app tree
+vi.mock("@/features/auth/context/auth-context", () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
+
+vi.mock("@/features/auth/hooks/use-auth", () => ({
+  useAuth: () => ({ status: "unauthenticated", user: null, refresh: vi.fn(), logout: vi.fn() }),
+}))
+
 import App from "./App"
 
 describe("App", () => {
-  it("renders the title", () => {
-    render(<App />)
-
-    expect(screen.getByText("Distributed Workflow Orchestrator")).toBeInTheDocument()
+  beforeEach(() => {
+    window.history.pushState({}, "", "/login")
   })
 
-  it("increments the count on button click", async () => {
-    const user = userEvent.setup()
-
+  it("renders the login page at /login", () => {
     render(<App />)
+    expect(screen.getByText(/enter your credentials/i)).toBeInTheDocument()
+  })
 
-    const button = screen.getByRole("button")
-
-    await user.click(button)
-    expect(button).toHaveTextContent("Clicked 1 time")
-
-    await user.click(button)
-    expect(button).toHaveTextContent("Clicked 2 times")
+  it("renders the register page at /register", () => {
+    window.history.pushState({}, "", "/register")
+    render(<App />)
+    expect(screen.getByText(/start managing workflows/i)).toBeInTheDocument()
   })
 })
