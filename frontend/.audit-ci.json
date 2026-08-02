@@ -4,17 +4,10 @@
   "report-type": "summary",
   "allowlist": [
     {
-      "GHSA-frvp-7c67-39w9|shadcn>@modelcontextprotocol/sdk>@hono/node-server": {
-        "active": true,
-        "notes": "Temporary exception for dev-tool transitive CVE",
-        "expiry": "2026-08-01T23:59:59Z"
-      }
-    },
-    {
       "GHSA-qwww-vcr4-c8h2|react-router-dom>react-router": {
         "active": true,
         "notes": "Temporary exception pending router dependency alignment",
-        "expiry": "2026-08-01T23:59:59Z"
+        "expiry": "2026-08-09T23:59:59Z"
       }
     }
   ]
