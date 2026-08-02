@@ -1,51 +1,70 @@
-import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
-import { getWorkflow } from "../api/workflows.api"
-import type { WorkflowDetail } from "../types/workflow.types"
-import type { APIError } from "@/lib/api/errors"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { WorkflowStatusBadge } from "../components/workflow-status-badge"
+import { useWorkflowDetail } from "../hooks/use-workflow-detail"
+import { WorkflowDetailView } from "../components/workflow-detail-view"
+
+function WorkflowDetailSkeleton() {
+  return (
+    <div className="space-y-6" aria-label="Loading workflow detail">
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-56" />
+          <Skeleton className="h-4 w-72 mt-1" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-8 w-20" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-24" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 export function WorkflowDetailPage() {
   const { workflowId } = useParams()
-  const [workflow, setWorkflow] = useState<WorkflowDetail | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<APIError | null>(null)
+  const numericId = Number(workflowId)
+  const validId = Number.isFinite(numericId) ? numericId : null
 
-  useEffect(() => {
-    async function loadWorkflow() {
-      setIsLoading(true)
-      setError(null)
+  const { workflow, isLoading, error, run, isRunning, runError } = useWorkflowDetail(validId)
 
-      const numericId = Number(workflowId)
-      if (!Number.isFinite(numericId)) {
-        setError({ code: "INVALID_ID", description: "Invalid workflow id." })
-        setIsLoading(false)
-        return
-      }
+  const backLink = (
+    <Button asChild variant="outline" size="sm">
+      <Link to="/workflows" className="inline-flex items-center gap-2">
+        <ArrowLeft className="size-4" aria-hidden="true" />
+        Back to dashboard
+      </Link>
+    </Button>
+  )
 
-      try {
-        const response = await getWorkflow(numericId)
-        setWorkflow(response)
-      } catch (err) {
-        setError(err as APIError)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    void loadWorkflow()
-  }, [workflowId])
+  if (!validId) {
+    return (
+      <main className="space-y-4">
+        {backLink}
+        <Alert variant="destructive">
+          <AlertDescription>Invalid workflow id.</AlertDescription>
+        </Alert>
+      </main>
+    )
+  }
 
   if (isLoading) {
     return (
       <main className="space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-32 w-full" />
+        {backLink}
+        <WorkflowDetailSkeleton />
       </main>
     )
   }
@@ -53,12 +72,7 @@ export function WorkflowDetailPage() {
   if (error) {
     return (
       <main className="space-y-4">
-        <Button asChild variant="outline">
-          <Link to="/workflows" className="inline-flex items-center gap-2">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to dashboard
-          </Link>
-        </Button>
+        {backLink}
         <Alert variant="destructive">
           <AlertDescription>{error.description}</AlertDescription>
         </Alert>
@@ -76,35 +90,15 @@ export function WorkflowDetailPage() {
         <h1 id="workflow-detail-title" className="text-2xl font-semibold tracking-tight">
           {workflow.name}
         </h1>
-        <Button asChild variant="outline">
-          <Link to="/workflows" className="inline-flex items-center gap-2">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to dashboard
-          </Link>
-        </Button>
+        {backLink}
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow status</CardTitle>
-          <CardDescription>Current execution state and task progression.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <WorkflowStatusBadge state={workflow.state} />
-          <ul className="space-y-2" aria-label="Workflow tasks">
-            {workflow.tasks.map((task) => (
-              <li key={task.id} className="rounded-md border bg-muted/30 px-3 py-2">
-                <p className="font-medium">
-                  {task.sequence}. {task.name}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {task.task_type} - {task.state}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      <WorkflowDetailView
+        workflow={workflow}
+        onRun={() => void run()}
+        isRunning={isRunning}
+        runError={runError}
+      />
     </main>
   )
 }
