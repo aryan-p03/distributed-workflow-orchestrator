@@ -62,6 +62,21 @@ export interface CreateWorkflowResponse {
   tasks: WorkflowTask[]
 }
 
+export interface TaskLog {
+  id: number
+  task_id: number
+  message: string
+  level: string
+  created_at: string
+}
+
+export interface TaskLogListResponse {
+  items: TaskLog[]
+  limit: number
+  offset: number
+  total: number
+}
+
 export interface WorkflowTemplateField {
   key: string
   label: string

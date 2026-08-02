@@ -2,6 +2,7 @@ import { get, post } from "@/lib/api/http"
 import type {
   CreateWorkflowRequest,
   CreateWorkflowResponse,
+  TaskLogListResponse,
   WorkflowDetail,
   WorkflowListResponse,
   WorkflowTemplateDefinition,
@@ -48,4 +49,12 @@ export function createWorkflow(body: CreateWorkflowRequest): Promise<CreateWorkf
 
 export function getWorkflowTemplates(): Promise<WorkflowTemplateDefinition[]> {
   return Promise.resolve(WORKFLOW_TEMPLATES)
+}
+
+export function getTaskLogs(workflowId: number, taskId: number): Promise<TaskLogListResponse> {
+  return get<TaskLogListResponse>(`/workflows/${workflowId}/tasks/${taskId}/logs`)
+}
+
+export function runWorkflow(workflowId: number): Promise<WorkflowDetail> {
+  return post<WorkflowDetail>(`/workflows/${workflowId}/run`)
 }
