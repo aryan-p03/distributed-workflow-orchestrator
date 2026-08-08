@@ -32,3 +32,7 @@ audit: ## Runs checks for security vulnerabilities on dependencies using pip-aud
 
 .PHONY: check
 check: lint typecheck format-check ## Runs all checks (linting, type checking, formatting)
+
+.PHONY: lint-openapi
+lint-openapi: ## Validates docs/openapi.yaml with Redocly CLI
+	redocly lint openapi/openapi.yaml --config .redocly.yaml

@@ -13,6 +13,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.14'
+  NODE_VERSION: '24'
 
 jobs:
   audit:
@@ -123,4 +124,22 @@ jobs:
 
       - name: Run tests
         run: make test
+  
+  lint-openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Redocly CLI
+        run: npm install -g @redocly/cli
+
+      - name: Run OpenAPI lint
+        working-directory: ./backend
+        run: make lint-openapi
         

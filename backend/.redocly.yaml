@@ -1,0 +1,8 @@
+extends:
+  - recommended
+
+rules:
+  # Localhost is the correct dev server for this spec
+  no-server-example.com: off
+  # GET /health is a public endpoint with no authenticated 4xx responses
+  operation-4xx-response: off
