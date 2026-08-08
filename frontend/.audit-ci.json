@@ -2,13 +2,5 @@
   "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
   "moderate": true,
   "report-type": "summary",
-  "allowlist": [
-    {
-      "GHSA-qwww-vcr4-c8h2|react-router-dom>react-router": {
-        "active": true,
-        "notes": "Temporary exception pending router dependency alignment",
-        "expiry": "2026-08-09T23:59:59Z"
-      }
-    }
-  ]
+  "allowlist": []
 }
