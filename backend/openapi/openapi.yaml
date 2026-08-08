@@ -1,0 +1,679 @@
+# yaml-language-server: $schema=https://spec.openapis.org/oas/3.1/schema/2022-10-07
+openapi: 3.1.0
+
+info:
+  title: Distributed Workflow Orchestrator API
+  version: 1.0.0
+  description: |
+    REST API for the Distributed Workflow Orchestrator. Provides authentication,
+    workflow lifecycle management, task inspection, and task log retrieval.
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+security:
+  - bearerAuth: []
+  - accessTokenCookie: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns the health status of the API, database, and Redis connections.
+      security: []
+      tags:
+        - health
+      responses:
+        "200":
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more dependencies unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /auth/register:
+    post:
+      operationId: registerUser
+      summary: Register a new user
+      security: []
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /auth/login:
+    post:
+      operationId: loginUser
+      summary: Authenticate and receive an access token
+      description: |
+        Returns a JWT access token in the response body and also sets it as an
+        `HttpOnly` cookie named `access_token`.
+      security: []
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get the authenticated user's profile
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Authenticated user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      summary: Invalidate the current session
+      description: Clears the `access_token` cookie and revokes the token server-side.
+      tags:
+        - auth
+      responses:
+        "204":
+          description: Logged out successfully
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /workflows:
+    get:
+      operationId: listWorkflows
+      summary: List workflows for the authenticated user
+      tags:
+        - workflows
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of workflows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createWorkflow
+      summary: Create a new workflow
+      tags:
+        - workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowRequest"
+      responses:
+        "201":
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /workflows/{workflow_id}:
+    get:
+      operationId: getWorkflow
+      summary: Get a workflow by ID
+      tags:
+        - workflows
+      parameters:
+        - $ref: "#/components/parameters/WorkflowId"
+      responses:
+        "200":
+          description: Workflow detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowReadResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /workflows/{workflow_id}/run:
+    post:
+      operationId: runWorkflow
+      summary: Enqueue a workflow for execution
+      description: Transitions a workflow from `pending` to `running` and dispatches tasks to the worker queue.
+      tags:
+        - workflows
+      parameters:
+        - $ref: "#/components/parameters/WorkflowId"
+      responses:
+        "202":
+          description: Workflow accepted for execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /workflows/{workflow_id}/tasks/{task_id}:
+    get:
+      operationId: getWorkflowTask
+      summary: Get a task within a workflow
+      tags:
+        - workflows
+      parameters:
+        - $ref: "#/components/parameters/WorkflowId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskReadResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /workflows/{workflow_id}/tasks/{task_id}/logs:
+    get:
+      operationId: listWorkflowTaskLogs
+      summary: List execution logs for a task
+      tags:
+        - workflows
+      parameters:
+        - $ref: "#/components/parameters/WorkflowId"
+        - $ref: "#/components/parameters/TaskId"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of task logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskLogListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    accessTokenCookie:
+      type: apiKey
+      in: cookie
+      name: access_token
+
+  parameters:
+    WorkflowId:
+      name: workflow_id
+      in: path
+      required: true
+      schema:
+        type: integer
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Unauthorized:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Forbidden:
+      description: Authenticated user does not have permission
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Conflict:
+      description: Resource conflict (e.g. duplicate email, invalid state transition)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    UnprocessableEntity:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+
+  schemas:
+    APIError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - details
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - degraded
+        details:
+          type: object
+          additionalProperties:
+            type: string
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - username
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+          minLength: 1
+          maxLength: 100
+        password:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    TokenResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          default: bearer
+
+    UserResponse:
+      type: object
+      required:
+        - id
+        - email
+        - username
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateWorkflowRequest:
+      type: object
+      required:
+        - template_name
+      properties:
+        template_name:
+          type: string
+          minLength: 1
+        payload:
+          type: object
+          default: {}
+
+    TaskResponse:
+      type: object
+      required:
+        - id
+        - sequence
+        - name
+        - task_type
+        - state
+        - retry_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        sequence:
+          type: integer
+        name:
+          type: string
+        task_type:
+          type: string
+        state:
+          type: string
+        retry_count:
+          type: integer
+        result:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkflowResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - state
+        - created_at
+        - updated_at
+        - tasks
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        state:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResponse"
+
+    WorkflowListItemResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - state
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        state:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkflowListResponse:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowListItemResponse"
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+
+    TaskReadResponse:
+      type: object
+      required:
+        - id
+        - workflow_id
+        - sequence
+        - name
+        - task_type
+        - state
+        - retry_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        workflow_id:
+          type: integer
+        sequence:
+          type: integer
+        name:
+          type: string
+        task_type:
+          type: string
+        state:
+          type: string
+        retry_count:
+          type: integer
+        result:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkflowReadResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - state
+        - created_at
+        - updated_at
+        - tasks
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        state:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskReadResponse"
+
+    TaskLogResponse:
+      type: object
+      required:
+        - id
+        - task_id
+        - message
+        - level
+        - created_at
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        message:
+          type: string
+        level:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    TaskLogListResponse:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskLogResponse"
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
