@@ -52,7 +52,25 @@ State columns are represented with SQLAlchemy enums for workflow/task lifecycle 
 
 ## API Endpoints
 
-- `GET /health`: service health response.
+### Health
+
+- `GET /health` — service health including database and Redis connectivity.
+
+### Auth
+
+- `POST /auth/register` — register a new user; returns JWT and sets HttpOnly cookie.
+- `POST /auth/login` — authenticate and receive an access token.
+- `GET /auth/me` — return the authenticated user's profile.
+- `POST /auth/logout` — clear the session cookie.
+
+### Workflows
+
+- `GET /workflows` — list workflows for the authenticated user (paginated).
+- `POST /workflows` — create a new workflow.
+- `GET /workflows/{workflow_id}` — get workflow detail.
+- `POST /workflows/{workflow_id}/run` — enqueue a workflow for execution.
+- `GET /workflows/{workflow_id}/tasks/{task_id}` — get task detail.
+- `GET /workflows/{workflow_id}/tasks/{task_id}/logs` — list task execution logs (paginated).
 
 ## Request Flow
 
