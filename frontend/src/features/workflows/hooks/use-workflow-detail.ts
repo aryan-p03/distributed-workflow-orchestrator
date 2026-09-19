@@ -13,6 +13,7 @@ export function useWorkflowDetail(workflowId: number | null) {
   const [error, setError] = useState<APIError | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [runError, setRunError] = useState<APIError | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Ref tracks whether polling should fetch on each tick without causing effect re-runs.
   const pollActiveRef = useRef(false)
@@ -28,6 +29,7 @@ export function useWorkflowDetail(workflowId: number | null) {
         const data = await getWorkflow(workflowId!)
         if (!isActive) return
         setWorkflow(data)
+        setRefreshKey((current) => current + 1)
         setError(null)
         if (isTerminal(data.state)) {
           pollActiveRef.current = false
@@ -62,6 +64,7 @@ export function useWorkflowDetail(workflowId: number | null) {
     try {
       const data = await runWorkflow(workflowId)
       setWorkflow(data)
+      setRefreshKey((current) => current + 1)
       if (!isTerminal(data.state)) {
         pollActiveRef.current = true
       }
@@ -72,5 +75,5 @@ export function useWorkflowDetail(workflowId: number | null) {
     }
   }, [workflowId])
 
-  return { workflow, isLoading, error, run, isRunning, runError }
+  return { workflow, isLoading, error, run, isRunning, runError, refreshKey }
 }

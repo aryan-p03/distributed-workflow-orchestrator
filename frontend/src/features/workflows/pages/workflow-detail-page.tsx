@@ -38,7 +38,8 @@ export function WorkflowDetailPage() {
   const numericId = Number(workflowId)
   const validId = Number.isFinite(numericId) ? numericId : null
 
-  const { workflow, isLoading, error, run, isRunning, runError } = useWorkflowDetail(validId)
+  const { workflow, isLoading, error, run, isRunning, runError, refreshKey } =
+    useWorkflowDetail(validId)
 
   const backLink = (
     <Button asChild variant="outline" size="sm">
@@ -98,6 +99,7 @@ export function WorkflowDetailPage() {
         onRun={() => void run()}
         isRunning={isRunning}
         runError={runError}
+        refreshKey={refreshKey}
       />
     </main>
   )

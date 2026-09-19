@@ -3,7 +3,7 @@ import { getTaskLogs } from "../api/workflows.api"
 import type { TaskLog } from "../types/workflow.types"
 import type { APIError } from "@/lib/api/errors"
 
-export function useTaskLogs(workflowId: number, taskId: number) {
+export function useTaskLogs(workflowId: number, taskId: number, refreshKey: number) {
   const [logs, setLogs] = useState<TaskLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<APIError | null>(null)
@@ -16,6 +16,7 @@ export function useTaskLogs(workflowId: number, taskId: number) {
         const response = await getTaskLogs(workflowId, taskId)
         if (!isActive) return
         setLogs(response.items)
+        setError(null)
       } catch (err) {
         if (!isActive) return
         setError(err as APIError)
@@ -29,7 +30,7 @@ export function useTaskLogs(workflowId: number, taskId: number) {
     return () => {
       isActive = false
     }
-  }, [workflowId, taskId])
+  }, [workflowId, taskId, refreshKey])
 
   return { logs, isLoading, error }
 }

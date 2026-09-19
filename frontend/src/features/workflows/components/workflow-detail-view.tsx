@@ -14,6 +14,7 @@ interface WorkflowDetailViewProps {
   onRun: () => void
   isRunning: boolean
   runError: APIError | null
+  refreshKey: number
 }
 
 export function WorkflowDetailView({
@@ -21,6 +22,7 @@ export function WorkflowDetailView({
   onRun,
   isRunning,
   runError,
+  refreshKey,
 }: WorkflowDetailViewProps) {
   // True when workflow is actively queued or running (not yet terminal, not in initial created state).
   const isProcessing = !isTerminal(workflow.state) && workflow.state !== "created"
@@ -88,7 +90,7 @@ export function WorkflowDetailView({
           <CardDescription>Ordered task execution steps and their log output.</CardDescription>
         </CardHeader>
         <CardContent>
-          <TaskLogPanel workflowId={workflow.id} tasks={workflow.tasks} />
+          <TaskLogPanel workflowId={workflow.id} tasks={workflow.tasks} refreshKey={refreshKey} />
         </CardContent>
       </Card>
     </div>

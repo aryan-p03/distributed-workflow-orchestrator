@@ -4,8 +4,16 @@ import { useTaskLogs } from "../hooks/use-task-logs"
 import { WorkflowStatusBadge } from "./workflow-status-badge"
 import type { WorkflowTask } from "../types/workflow.types"
 
-function TaskLogSection({ workflowId, task }: { workflowId: number; task: WorkflowTask }) {
-  const { logs, isLoading, error } = useTaskLogs(workflowId, task.id)
+function TaskLogSection({
+  workflowId,
+  task,
+  refreshKey,
+}: {
+  workflowId: number
+  task: WorkflowTask
+  refreshKey: number
+}) {
+  const { logs, isLoading, error } = useTaskLogs(workflowId, task.id, refreshKey)
 
   return (
     <li className="rounded-md border bg-muted/30 px-3 py-3 space-y-2">
@@ -56,7 +64,15 @@ function TaskLogSection({ workflowId, task }: { workflowId: number; task: Workfl
   )
 }
 
-export function TaskLogPanel({ workflowId, tasks }: { workflowId: number; tasks: WorkflowTask[] }) {
+export function TaskLogPanel({
+  workflowId,
+  tasks,
+  refreshKey,
+}: {
+  workflowId: number
+  tasks: WorkflowTask[]
+  refreshKey: number
+}) {
   if (tasks.length === 0) {
     return <p className="text-sm text-muted-foreground">No tasks found for this workflow.</p>
   }
@@ -66,7 +82,7 @@ export function TaskLogPanel({ workflowId, tasks }: { workflowId: number; tasks:
   return (
     <ul className="space-y-3" aria-label="Workflow tasks and logs">
       {sorted.map((task) => (
-        <TaskLogSection key={task.id} workflowId={workflowId} task={task} />
+        <TaskLogSection key={task.id} workflowId={workflowId} task={task} refreshKey={refreshKey} />
       ))}
     </ul>
   )
