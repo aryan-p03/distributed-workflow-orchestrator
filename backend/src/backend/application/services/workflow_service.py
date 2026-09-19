@@ -87,6 +87,7 @@ class WorkflowService:
                 sequence=task.sequence,
                 name=task.name,
                 task_type=task.task_type,
+                input_payload=task.input_payload,
                 state=TaskState.CREATED,
             )
             for task in plan.tasks

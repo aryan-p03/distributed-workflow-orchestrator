@@ -14,7 +14,7 @@ from backend.application.services.workflow_service import (
     WorkflowServiceError,
     WorkflowTaskNotFoundError,
 )
-from backend.application.workflow_templates import WorkflowTemplateError
+from backend.application.workflow_templates import WORKFLOW_TEMPLATES, WorkflowTemplateError
 from backend.domain.auth import AuthError, AuthUser, TokenError
 from backend.infrastructure.repositories.sql_user_repository import SqlUserRepository
 from backend.infrastructure.task_queue_dispatcher import CeleryTaskQueueDispatcher
@@ -29,6 +29,8 @@ from backend.interfaces.http.schemas.workflow_read import (
 from backend.interfaces.http.schemas.workflows import (
     CreateWorkflowRequest,
     WorkflowResponse,
+    WorkflowTemplateFieldResponse,
+    WorkflowTemplateResponse,
 )
 
 _bearer = HTTPBearer(auto_error=False)
@@ -157,6 +159,28 @@ def create_workflow_router(
             offset=offset,
             total=total,
         )
+
+    @router.get("/templates", response_model=list[WorkflowTemplateResponse])
+    def list_workflow_templates(
+        current_user: AuthUser = Depends(get_current_user),  # noqa: ARG001
+    ) -> list[WorkflowTemplateResponse]:
+        return [
+            WorkflowTemplateResponse(
+                name=name,
+                label=definition.label,
+                description=definition.description,
+                fields=[
+                    WorkflowTemplateFieldResponse(
+                        key=field.key,
+                        label=field.label,
+                        placeholder=field.placeholder,
+                        control=field.control,
+                    )
+                    for field in definition.fields
+                ],
+            )
+            for name, definition in WORKFLOW_TEMPLATES.items()
+        ]
 
     @router.get("/{workflow_id}", response_model=WorkflowReadResponse)
     def get_workflow(

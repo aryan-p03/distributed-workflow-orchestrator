@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Protocol
 
 from backend.domain.workflow_state import TaskState
@@ -14,7 +13,6 @@ class TaskQueueDispatcher(Protocol):
         self,
         *,
         task_id: int,
-        payload: Mapping[str, object] | None = None,
         countdown_seconds: int | None = None,
     ) -> None:
         """Publish a runnable task to background execution."""
@@ -30,12 +28,10 @@ class WorkflowTaskDispatchService:
         self,
         *,
         task_id: int,
-        payload: Mapping[str, object] | None = None,
         countdown_seconds: int | None = None,
     ) -> None:
         self._dispatcher.dispatch_task(
             task_id=task_id,
-            payload=payload,
             countdown_seconds=countdown_seconds,
         )
 
@@ -49,7 +45,7 @@ class WorkflowTaskDispatchService:
         task = self.find_first_queued_task(workflow=workflow)
         if task is None:
             return None
-        self.dispatch_task_by_id(task_id=task.id, payload=None)
+        self.dispatch_task_by_id(task_id=task.id)
         return task
 
 

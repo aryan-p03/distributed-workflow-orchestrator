@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import pytest
@@ -22,13 +21,11 @@ class _DispatchRecorder:
         self,
         *,
         task_id: int,
-        payload: Mapping[str, object] | None = None,
         countdown_seconds: int | None = None,
     ) -> str:
         self.calls.append(
             {
                 "task_id": task_id,
-                "payload": payload,
                 "countdown_seconds": countdown_seconds,
             }
         )
@@ -42,12 +39,6 @@ class _DispatchRecorder:
         ("url_check", "Check https://example.com", {"url": "https://example.com"}),
         ("csv_process", "name,score\nalpha,10\nbeta,20", {"csv_text": "name,score\nalpha,10"}),
         ("text_analyze", "Analyze this text", {"text": "Hello world. Testing now!"}),
-        ("document.fetch", "Fetch Q1 Statement", {}),
-        ("document.transform", "Transform Q1 Statement", {}),
-        ("document.publish", "Publish to s3://processed/q1.json", {}),
-        ("release.validate", "Validate api", {}),
-        ("release.deploy", "Deploy to staging", {}),
-        ("release.smoke_test", "Smoke test api", {}),
     ],
 )
 def test_execute_task_dispatches_supported_handlers(
@@ -63,11 +54,12 @@ def test_execute_task_dispatches_supported_handlers(
         workflow_id=workflow.id,
         name=task_name,
         task_type=task_type,
+        input_payload=payload,
         state=TaskState.QUEUED,
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload)
+    result = execute_task(task.id)
 
     assert result["status"] == "success"
 
@@ -95,6 +87,30 @@ def test_execute_task_dispatches_supported_handlers(
     assert logs[1].level == "INFO"
 
 
+def test_execute_task_uses_persisted_input(
+    db_session: Session,
+) -> None:
+    user = create_user(db_session, email="durable-input@example.com", username="durable-input")
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
+    task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Analyze submitted text",
+        task_type="text_analyze",
+        input_payload={"text": "Persisted input wins."},
+        state=TaskState.QUEUED,
+    )
+    db_session.commit()
+
+    result = execute_task(task.id)
+
+    assert result["data"] == {
+        "char_count": 21,
+        "word_count": 3,
+        "sentence_count": 1,
+    }
+
+
 def test_execute_task_schedules_retry_for_unknown_task_type(db_session: Session) -> None:
     user = create_user(db_session, email="unknown-type@example.com", username="unknown-type")
     workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.QUEUED)
@@ -107,7 +123,7 @@ def test_execute_task_schedules_retry_for_unknown_task_type(db_session: Session)
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload={})
+    result = execute_task(task.id)
 
     assert result["status"] == "failed"
     assert "Unsupported task type" in result["message"]
@@ -148,7 +164,7 @@ def test_execute_task_marks_failed_when_retry_budget_exhausted(db_session: Sessi
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload={})
+    result = execute_task(task.id)
 
     assert result["status"] == "failed"
     assert result["data"]["retry_scheduled"] is False
@@ -181,7 +197,7 @@ def test_execute_task_rejects_invalid_transition_state(db_session: Session) -> N
     db_session.commit()
 
     with pytest.raises(ValueError, match="cannot transition"):
-        execute_task(task.id, payload={"seconds": 1})
+        execute_task(task.id)
 
 
 def test_execute_task_dispatches_next_queued_task_after_success(
@@ -211,13 +227,12 @@ def test_execute_task_dispatches_next_queued_task_after_success(
     )
     db_session.commit()
 
-    result = execute_task(first_task.id, payload={"seconds": 1})
+    result = execute_task(first_task.id)
     assert result["status"] == "success"
 
     assert recorder.calls == [
         {
             "task_id": second_task.id,
-            "payload": None,
             "countdown_seconds": None,
         }
     ]
@@ -242,7 +257,7 @@ def test_execute_task_schedules_retry_with_backoff_countdown(
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload={})
+    result = execute_task(task.id)
     assert result["status"] == "failed"
     assert result["data"]["retry_scheduled"] is True
     assert result["data"]["next_backoff_seconds"] == 5
@@ -250,7 +265,6 @@ def test_execute_task_schedules_retry_with_backoff_countdown(
     assert recorder.calls == [
         {
             "task_id": task.id,
-            "payload": None,
             "countdown_seconds": 5,
         }
     ]
@@ -276,7 +290,7 @@ def test_execute_task_does_not_dispatch_after_terminal_failure(
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload={})
+    result = execute_task(task.id)
     assert result["status"] == "failed"
     assert result["data"]["retry_scheduled"] is False
 
@@ -326,7 +340,6 @@ def test_recover_stale_tasks_requeues_only_eligible_tasks(
     assert recorder.calls == [
         {
             "task_id": stale_task.id,
-            "payload": None,
             "countdown_seconds": None,
         }
     ]
@@ -358,7 +371,6 @@ def test_recover_stale_tasks_requeues_only_eligible_tasks(
     assert recorder.calls == [
         {
             "task_id": stale_task.id,
-            "payload": None,
             "countdown_seconds": None,
         }
     ]

@@ -202,11 +202,29 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /workflows/templates:
+    get:
+      operationId: listWorkflowTemplates
+      summary: List supported workflow templates
+      tags:
+        - workflows
+      responses:
+        "200":
+          description: Workflow templates accepted by the create endpoint
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowTemplateResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /workflows/{workflow_id}/run:
     post:
       operationId: runWorkflow
       summary: Enqueue a workflow for execution
-      description: Transitions a workflow from `pending` to `running` and dispatches tasks to the worker queue.
+      description: Transitions a workflow from `created` to `queued` and dispatches its first task to the worker queue.
       tags:
         - workflows
       parameters:
@@ -492,6 +510,45 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    WorkflowTemplateFieldResponse:
+      type: object
+      required:
+        - key
+        - label
+        - placeholder
+        - control
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        placeholder:
+          type: string
+        control:
+          type: string
+          enum:
+            - input
+            - textarea
+
+    WorkflowTemplateResponse:
+      type: object
+      required:
+        - name
+        - label
+        - description
+        - fields
+      properties:
+        name:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowTemplateFieldResponse"
 
     WorkflowResponse:
       type: object

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 
 import pytest
 from sqlalchemy.orm import Session
@@ -22,13 +21,11 @@ class _DispatchRecorder:
         self,
         *,
         task_id: int,
-        payload: Mapping[str, object] | None = None,
         countdown_seconds: int | None = None,
     ) -> str:
         self.calls.append(
             {
                 "task_id": task_id,
-                "payload": payload,
                 "countdown_seconds": countdown_seconds,
             }
         )
@@ -49,7 +46,7 @@ def test_single_task_workflow_reaches_success(db_session: Session) -> None:
     )
     db_session.commit()
 
-    result = execute_task(task.id, {"seconds": 1})
+    result = execute_task(task.id)
 
     assert result["status"] == "success"
 
@@ -90,7 +87,7 @@ def test_multi_task_workflow_stays_running_until_all_tasks_complete(
     db_session.commit()
 
     # Execute first task; workflow should be RUNNING while task2 is still QUEUED.
-    result1 = execute_task(task1.id, {"seconds": 1})
+    result1 = execute_task(task1.id)
     assert result1["status"] == "success"
 
     db_session.expire_all()
@@ -104,7 +101,7 @@ def test_multi_task_workflow_stays_running_until_all_tasks_complete(
     assert mid_task2 is not None and mid_task2.state == TaskState.QUEUED
 
     # Execute second task; workflow should now be SUCCESS.
-    result2 = execute_task(task2.id, {"url": "https://example.com"})
+    result2 = execute_task(task2.id)
     assert result2["status"] == "success"
 
     db_session.expire_all()
@@ -146,13 +143,12 @@ def test_multi_task_success_auto_dispatches_follow_up_task(
     )
     db_session.commit()
 
-    result = execute_task(first_task.id, {"seconds": 1})
+    result = execute_task(first_task.id)
     assert result["status"] == "success"
 
     assert recorder.calls == [
         {
             "task_id": second_task.id,
-            "payload": None,
             "countdown_seconds": None,
         }
     ]

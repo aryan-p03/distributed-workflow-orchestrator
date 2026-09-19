@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     Enum,
@@ -104,6 +105,7 @@ class Task(Base):
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     state: Mapped[TaskState] = mapped_column(
         Enum(TaskState, name="task_state"),
         default=TaskState.CREATED,

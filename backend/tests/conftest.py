@@ -119,7 +119,7 @@ def isolated_redis() -> Iterator[InMemoryRedis]:
 def stub_worker_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "backend.worker.tasks.enqueue_task_execution",
-        lambda *, task_id, payload=None, countdown_seconds=None: f"test-enqueue-{task_id}",
+        lambda *, task_id, countdown_seconds=None: f"test-enqueue-{task_id}",
     )
 
 
@@ -146,7 +146,7 @@ def test_client(
     monkeypatch.setattr("backend.app.sync_database_schema", lambda _url: None)
     monkeypatch.setattr(
         "backend.infrastructure.task_queue_dispatcher.enqueue_task_execution",
-        lambda *, task_id, payload=None: f"test-enqueue-{task_id}",
+        lambda *, task_id: f"test-enqueue-{task_id}",
     )
 
     app = create_app()

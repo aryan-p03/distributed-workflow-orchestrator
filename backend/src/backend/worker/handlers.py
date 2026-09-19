@@ -27,12 +27,6 @@ def dispatch_task_handler(
         "csv_process": _handle_csv_process,
         "text_analyze": _handle_text_analyze,
         "text_analysis": _handle_text_analyze,
-        "document.fetch": _handle_document_fetch,
-        "document.transform": _handle_document_transform,
-        "document.publish": _handle_document_publish,
-        "release.validate": _handle_release_validate,
-        "release.deploy": _handle_release_deploy,
-        "release.smoke_test": _handle_release_smoke_test,
     }
 
     handler = handlers.get(normalized_type)
@@ -103,84 +97,6 @@ def _handle_text_analyze(*, task_name: str, payload: Mapping[str, object]) -> Ha
     }
 
 
-def _handle_document_fetch(*, task_name: str, payload: Mapping[str, object]) -> HandlerResult:
-    document_name = _extract_task_suffix(task_name=task_name, prefix="Fetch")
-    source_uri = payload.get("source_uri") if isinstance(payload.get("source_uri"), str) else None
-    return {
-        "status": "success",
-        "message": "Document fetched",
-        "data": {
-            "document_name": document_name,
-            "source_uri": source_uri,
-        },
-    }
-
-
-def _handle_document_transform(*, task_name: str, payload: Mapping[str, object]) -> HandlerResult:
-    document_name = _extract_task_suffix(task_name=task_name, prefix="Transform")
-    transform_profile = payload.get("transform_profile")
-    return {
-        "status": "success",
-        "message": "Document transformed",
-        "data": {
-            "document_name": document_name,
-            "transform_profile": transform_profile,
-        },
-    }
-
-
-def _handle_document_publish(*, task_name: str, payload: Mapping[str, object]) -> HandlerResult:
-    destination_uri = _extract_task_suffix(task_name=task_name, prefix="Publish to")
-    published_object = payload.get("published_object")
-    return {
-        "status": "success",
-        "message": "Document published",
-        "data": {
-            "destination_uri": destination_uri,
-            "published_object": published_object,
-        },
-    }
-
-
-def _handle_release_validate(*, task_name: str, payload: Mapping[str, object]) -> HandlerResult:
-    service_name = _extract_task_suffix(task_name=task_name, prefix="Validate")
-    return {
-        "status": "success",
-        "message": "Release validation complete",
-        "data": {
-            "service_name": service_name,
-            "checks_passed": True,
-            "validation_summary": payload.get("validation_summary", "ok"),
-        },
-    }
-
-
-def _handle_release_deploy(*, task_name: str, payload: Mapping[str, object]) -> HandlerResult:
-    environment = _extract_task_suffix(task_name=task_name, prefix="Deploy to")
-    release_version = payload.get("release_version")
-    return {
-        "status": "success",
-        "message": "Release deployment complete",
-        "data": {
-            "environment": environment,
-            "release_version": release_version,
-        },
-    }
-
-
-def _handle_release_smoke_test(*, task_name: str, payload: Mapping[str, object]) -> HandlerResult:
-    service_name = _extract_task_suffix(task_name=task_name, prefix="Smoke test")
-    return {
-        "status": "success",
-        "message": "Release smoke test complete",
-        "data": {
-            "service_name": service_name,
-            "checks_passed": True,
-            "evidence": payload.get("evidence", "simulated"),
-        },
-    }
-
-
 def _extract_numeric_seconds(*, task_name: str, payload: Mapping[str, object]) -> int:
     raw_seconds = payload.get("seconds")
     if isinstance(raw_seconds, (int, float)):
@@ -201,12 +117,3 @@ def _extract_url(task_name: str) -> str | None:
     if match is None:
         return None
     return match.group(0).rstrip(".,;)")
-
-
-def _extract_task_suffix(*, task_name: str, prefix: str) -> str:
-    stripped = task_name.strip()
-    if stripped.lower().startswith(prefix.lower()):
-        suffix = stripped[len(prefix) :].strip()
-        if suffix:
-            return suffix
-    return stripped

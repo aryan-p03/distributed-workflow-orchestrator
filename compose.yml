@@ -80,7 +80,7 @@ services:
       [
         "sh",
         "-c",
-        "python -m celery -A backend.worker.celery_app:celery_app worker",
+        "python -m celery -A backend.worker.celery_app:celery_app worker --loglevel=${CELERY_LOG_LEVEL:-INFO}",
       ]
     volumes:
       - ./backend:/app

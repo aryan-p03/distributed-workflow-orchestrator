@@ -30,7 +30,8 @@ erDiagram
         int workflow_id FK
         int sequence
         string name
-        string task_type "delay, url_check, csv_process, text_analyze, document.fetch, document.transform, document.publish, release.validate, release.deploy, release.smoke_test"
+        string task_type "csv_process, text_analyze"
+        json input_payload
         string state "created, queued, running, success, failed, retrying"
         int retry_count
         text result
@@ -107,7 +108,8 @@ Individual units of work within a workflow. State transitions follow strict rule
 | workflow_id | int | FK → workflows.id, NOT NULL | On delete: CASCADE |
 | sequence | int | NOT NULL | 1-based execution order within the workflow |
 | name | string(255) | NOT NULL | Task description (e.g., "Wait 3 seconds") |
-| task_type | string(100) | NOT NULL | Handler type: delay, url_check, csv_process, text_analyze, document.fetch, document.transform, document.publish, release.validate, release.deploy, release.smoke_test |
+| task_type | string(100) | NOT NULL | Public template handler type: csv_process or text_analyze |
+| input_payload | JSON | NOT NULL | Immutable canonical task input loaded by workers and reused for retries and recovery |
 | state | enum (TaskState) | NOT NULL, DEFAULT 'created' | Values: created, queued, running, success, failed, retrying |
 | retry_count | int | NOT NULL, DEFAULT 0 | Incremented on failure; max 3 retries; constraint: >= 0 |
 | result | text | nullable | Handler output as JSON string: `{status: str, message: str, data: any}` |

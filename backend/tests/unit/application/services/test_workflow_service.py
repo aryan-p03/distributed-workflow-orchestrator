@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from uuid import uuid4
 
 import pytest
@@ -22,7 +21,6 @@ class _RecordingDispatcher:
         self,
         *,
         task_id: int,
-        payload: Mapping[str, object] | None = None,
         countdown_seconds: int | None = None,
     ) -> None:
         self.task_ids.append(task_id)
@@ -41,12 +39,10 @@ def test_create_workflow_persists_workflow_and_ordered_tasks(
 
     workflow = workflow_service.create_workflow(
         user_id=user.id,
-        template_name="document_processing",
+        template_name="text_analysis",
         payload={
-            "workflow_name": "Quarterly statement import",
-            "document_name": "Q1 Statement",
-            "source_uri": "s3://incoming/q1.pdf",
-            "destination_uri": "s3://processed/q1.json",
+            "workflow_name": "Quarterly statement analysis",
+            "text": "Revenue increased. Margin held steady.",
         },
     )
     db_session.commit()
@@ -63,17 +59,12 @@ def test_create_workflow_persists_workflow_and_ordered_tasks(
     )
 
     assert persisted_workflow.user_id == user.id
-    assert persisted_workflow.name == "Quarterly statement import"
-    assert [task.sequence for task in persisted_tasks] == [1, 2, 3]
-    assert [task.name for task in persisted_tasks] == [
-        "Fetch Q1 Statement",
-        "Transform Q1 Statement",
-        "Publish to s3://processed/q1.json",
-    ]
-    assert [task.task_type for task in persisted_tasks] == [
-        "document.fetch",
-        "document.transform",
-        "document.publish",
+    assert persisted_workflow.name == "Quarterly statement analysis"
+    assert [task.sequence for task in persisted_tasks] == [1]
+    assert [task.name for task in persisted_tasks] == ["Analyze submitted text"]
+    assert [task.task_type for task in persisted_tasks] == ["text_analyze"]
+    assert [task.input_payload for task in persisted_tasks] == [
+        {"text": "Revenue increased. Margin held steady."}
     ]
 
 
@@ -85,11 +76,9 @@ def test_create_workflow_uses_default_name_and_initializes_empty_task_logs(
 
     workflow = workflow_service.create_workflow(
         user_id=user.id,
-        template_name="release_pipeline",
+        template_name="csv_summary",
         payload={
-            "service_name": "api",
-            "release_version": "2026.07.18",
-            "environment": "staging",
+            "csv_text": "name,score\nalpha,10\nbeta,20",
         },
     )
     db_session.commit()
@@ -111,15 +100,14 @@ def test_create_workflow_uses_default_name_and_initializes_empty_task_logs(
         .all()
     )
 
-    assert workflow.name == "Deploy api 2026.07.18"
+    assert workflow.name == "CSV summary"
     assert workflow.state == WorkflowState.CREATED
-    assert [task.state for task in persisted_tasks] == [
-        TaskState.CREATED,
-        TaskState.CREATED,
-        TaskState.CREATED,
+    assert [task.state for task in persisted_tasks] == [TaskState.CREATED]
+    assert [task.retry_count for task in persisted_tasks] == [0]
+    assert [task.result for task in persisted_tasks] == [None]
+    assert [task.input_payload for task in persisted_tasks] == [
+        {"csv_text": "name,score\nalpha,10\nbeta,20"}
     ]
-    assert [task.retry_count for task in persisted_tasks] == [0, 0, 0]
-    assert [task.result for task in persisted_tasks] == [None, None, None]
     assert task_logs == []
 
 
@@ -148,12 +136,10 @@ def test_create_workflow_rejects_invalid_payload(
     with pytest.raises(WorkflowTemplateError, match="workflow_name"):
         workflow_service.create_workflow(
             user_id=user.id,
-            template_name="document_processing",
+            template_name="text_analysis",
             payload={
                 "workflow_name": "   ",
-                "document_name": "Q1 Statement",
-                "source_uri": "s3://incoming/q1.pdf",
-                "destination_uri": "s3://processed/q1.json",
+                "text": "Quarterly statement",
             },
         )
 
@@ -167,11 +153,9 @@ def test_create_workflow_rejects_unexpected_payload_fields(
     with pytest.raises(WorkflowTemplateError, match="Unexpected workflow template fields"):
         workflow_service.create_workflow(
             user_id=user.id,
-            template_name="document_processing",
+            template_name="text_analysis",
             payload={
-                "document_name": "Q1 Statement",
-                "source_uri": "s3://incoming/q1.pdf",
-                "destination_uri": "s3://processed/q1.json",
+                "text": "Quarterly statement",
                 "priority": "high",
             },
         )
@@ -183,12 +167,8 @@ def test_create_workflow_rejects_missing_authenticated_user(
     with pytest.raises(WorkflowServiceError, match="Authenticated user not found"):
         workflow_service.create_workflow(
             user_id=uuid4(),
-            template_name="release_pipeline",
-            payload={
-                "service_name": "api",
-                "release_version": "2026.07.17",
-                "environment": "staging",
-            },
+            template_name="text_analysis",
+            payload={"text": "Quarterly statement"},
         )
 
 

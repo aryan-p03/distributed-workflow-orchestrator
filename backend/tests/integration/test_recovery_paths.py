@@ -54,7 +54,7 @@ def test_worker_crash_mid_execution_rolls_back_and_is_recoverable(
     monkeypatch.setattr("backend.worker.tasks.dispatch_task_handler", crash_once)
 
     with pytest.raises(KeyboardInterrupt, match="simulated worker crash"):
-        execute_task(task.id, {"seconds": 1})
+        execute_task(task.id)
 
     db_session.expire_all()
     persisted_task = db_session.get(Task, task.id)
@@ -66,7 +66,7 @@ def test_worker_crash_mid_execution_rolls_back_and_is_recoverable(
     assert persisted_task.result is None
     assert persisted_workflow.state == WorkflowState.QUEUED
 
-    result = execute_task(task.id, {"seconds": 1})
+    result = execute_task(task.id)
     assert result["status"] == "success"
 
     db_session.expire_all()
@@ -124,7 +124,7 @@ def test_api_restart_preserves_active_workflow_and_allows_completion(
     assert mid_completed.state == TaskState.SUCCESS
     assert mid_queued.state == TaskState.QUEUED
 
-    result = execute_task(queued_task.id, {"url": "https://example.com"})
+    result = execute_task(queued_task.id)
     assert result["status"] == "success"
 
     db_session.expire_all()

@@ -2,7 +2,7 @@ import logging
 
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.infrastructure.db import Base
@@ -37,6 +37,12 @@ def sync_database_schema(database_url: str) -> None:
     engine = create_engine(database_url, pool_pre_ping=True)
     try:
         Base.metadata.create_all(engine, checkfirst=True)
+        task_columns = {column["name"] for column in inspect(engine).get_columns("tasks")}
+        if "input_payload" not in task_columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE tasks ADD COLUMN input_payload JSON NOT NULL DEFAULT '{}'")
+                )
     except SQLAlchemyError as exc:
         logger.exception("Database schema sync failed")
         raise RuntimeError(f"Database schema sync failed: {exc.__class__.__name__}") from exc

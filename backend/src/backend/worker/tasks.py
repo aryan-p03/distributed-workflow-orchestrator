@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any, cast
@@ -35,17 +34,14 @@ def recover_stale_tasks() -> dict[str, Any]:
         recovered_task_ids = recovery_service.recover(now=datetime.now(UTC))
         session.commit()
         for task_id in recovered_task_ids:
-            enqueue_task_execution(task_id=task_id, payload=None)
+            enqueue_task_execution(task_id=task_id)
         return {"status": "success", "recovered_task_ids": recovered_task_ids}
     finally:
         session.close()
 
 
 @celery_app.task(name="worker.execute_task")  # type: ignore[untyped-decorator]
-def execute_task(
-    task_id: int,
-    payload: Mapping[str, object] | None = None,
-) -> dict[str, Any]:
+def execute_task(task_id: int) -> dict[str, Any]:
     session: Session = _new_session()
     try:
         execution_service = TaskExecutionService()
@@ -71,7 +67,7 @@ def execute_task(
             handler_result = dispatch_task_handler(
                 task_type=task.task_type,
                 task_name=task.name,
-                payload=payload,
+                payload=task.input_payload,
             )
             result = cast(dict[str, Any], handler_result)
             result = execution_service.complete_success(task=task, result=result)
@@ -113,13 +109,12 @@ def execute_task(
             if resolution is not None and resolution.retry_scheduled and resolution.backoff_seconds:
                 enqueue_task_execution(
                     task_id=task.id,
-                    payload=None,
                     countdown_seconds=resolution.backoff_seconds,
                 )
             elif result["status"] == "success":
                 next_task = _find_first_queued_task(workflow=task.workflow)
                 if next_task is not None:
-                    enqueue_task_execution(task_id=next_task.id, payload=None)
+                    enqueue_task_execution(task_id=next_task.id)
 
         session.commit()
         return result

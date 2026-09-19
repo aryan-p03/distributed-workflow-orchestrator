@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 
 class WorkflowTemplateError(ValueError):
@@ -13,6 +14,7 @@ class WorkflowTaskTemplate:
     sequence: int
     name: str
     task_type: str
+    input_payload: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -22,42 +24,76 @@ class WorkflowTemplatePlan:
 
 
 @dataclass(frozen=True)
+class WorkflowTemplateField:
+    key: str
+    label: str
+    placeholder: str
+    control: Literal["input", "textarea"] = "input"
+
+
+@dataclass(frozen=True)
 class WorkflowTemplateDefinition:
-    required_fields: tuple[str, ...]
+    label: str
+    description: str
+    fields: tuple[WorkflowTemplateField, ...]
     default_name: Callable[[dict[str, str]], str]
     build_tasks: Callable[[dict[str, str]], tuple[WorkflowTaskTemplate, ...]]
 
+    @property
+    def required_fields(self) -> tuple[str, ...]:
+        return tuple(field.key for field in self.fields)
 
-def _document_processing_tasks(values: dict[str, str]) -> tuple[WorkflowTaskTemplate, ...]:
-    document_name = values["document_name"]
-    destination_uri = values["destination_uri"]
+
+def _text_analysis_tasks(values: dict[str, str]) -> tuple[WorkflowTaskTemplate, ...]:
     return (
-        WorkflowTaskTemplate(1, f"Fetch {document_name}", "document.fetch"),
-        WorkflowTaskTemplate(2, f"Transform {document_name}", "document.transform"),
-        WorkflowTaskTemplate(3, f"Publish to {destination_uri}", "document.publish"),
+        WorkflowTaskTemplate(
+            sequence=1,
+            name="Analyze submitted text",
+            task_type="text_analyze",
+            input_payload={"text": values["text"]},
+        ),
     )
 
 
-def _release_pipeline_tasks(values: dict[str, str]) -> tuple[WorkflowTaskTemplate, ...]:
-    service_name = values["service_name"]
-    environment = values["environment"]
+def _csv_summary_tasks(values: dict[str, str]) -> tuple[WorkflowTaskTemplate, ...]:
     return (
-        WorkflowTaskTemplate(1, f"Validate {service_name}", "release.validate"),
-        WorkflowTaskTemplate(2, f"Deploy to {environment}", "release.deploy"),
-        WorkflowTaskTemplate(3, f"Smoke test {service_name}", "release.smoke_test"),
+        WorkflowTaskTemplate(
+            sequence=1,
+            name="Summarize submitted CSV",
+            task_type="csv_process",
+            input_payload={"csv_text": values["csv_text"]},
+        ),
     )
 
 
 WORKFLOW_TEMPLATES: dict[str, WorkflowTemplateDefinition] = {
-    "document_processing": WorkflowTemplateDefinition(
-        required_fields=("document_name", "source_uri", "destination_uri"),
-        default_name=lambda values: f"Process {values['document_name']}",
-        build_tasks=_document_processing_tasks,
+    "text_analysis": WorkflowTemplateDefinition(
+        label="Text Analysis",
+        description="Counts characters, words, and sentences in submitted text.",
+        fields=(
+            WorkflowTemplateField(
+                key="text",
+                label="Text",
+                placeholder="Paste text to analyze",
+                control="textarea",
+            ),
+        ),
+        default_name=lambda values: "Text analysis",
+        build_tasks=_text_analysis_tasks,
     ),
-    "release_pipeline": WorkflowTemplateDefinition(
-        required_fields=("service_name", "release_version", "environment"),
-        default_name=lambda values: f"Deploy {values['service_name']} {values['release_version']}",
-        build_tasks=_release_pipeline_tasks,
+    "csv_summary": WorkflowTemplateDefinition(
+        label="CSV Summary",
+        description="Counts rows and columns in submitted CSV data.",
+        fields=(
+            WorkflowTemplateField(
+                key="csv_text",
+                label="CSV Data",
+                placeholder="name,score\nalpha,10",
+                control="textarea",
+            ),
+        ),
+        default_name=lambda values: "CSV summary",
+        build_tasks=_csv_summary_tasks,
     ),
 }
 

@@ -1,5 +1,3 @@
-from collections.abc import Mapping
-
 from celery import Celery  # type: ignore[import-untyped]
 
 from backend.infrastructure.config import get_settings
@@ -21,7 +19,6 @@ celery_app.autodiscover_tasks(["backend.worker"])
 def enqueue_task_execution(
     *,
     task_id: int,
-    payload: Mapping[str, object] | None = None,
     countdown_seconds: int | None = None,
 ) -> str:
     """Publish a task execution request to the worker queue."""
@@ -31,7 +28,7 @@ def enqueue_task_execution(
 
     result = celery_app.send_task(
         "worker.execute_task",
-        args=[task_id, payload],
+        args=[task_id],
         **send_kwargs,
     )
     return str(result.id)

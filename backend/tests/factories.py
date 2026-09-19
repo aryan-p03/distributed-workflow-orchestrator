@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -60,6 +61,7 @@ def create_task(
     sequence: int = 1,
     name: str = "Sample task",
     task_type: str = "noop",
+    input_payload: Mapping[str, object] | None = None,
     state: TaskState = TaskState.CREATED,
     retry_count: int = 0,
     result: str | None = None,
@@ -71,6 +73,7 @@ def create_task(
         sequence=sequence,
         name=name,
         task_type=task_type,
+        input_payload=dict(input_payload or {}),
         state=state,
         retry_count=retry_count,
         result=result,

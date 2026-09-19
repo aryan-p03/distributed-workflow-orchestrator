@@ -13,6 +13,20 @@ class CreateWorkflowRequest(BaseModel):
     payload: dict[str, object] = Field(default_factory=dict)
 
 
+class WorkflowTemplateFieldResponse(BaseModel):
+    key: str
+    label: str
+    placeholder: str
+    control: str
+
+
+class WorkflowTemplateResponse(BaseModel):
+    name: str
+    label: str
+    description: str
+    fields: list[WorkflowTemplateFieldResponse]
+
+
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

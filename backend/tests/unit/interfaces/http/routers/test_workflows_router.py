@@ -55,7 +55,7 @@ def _workflow_record(
     return SimpleNamespace(
         id=workflow_id,
         user_id=user_id,
-        name="Process Q1",
+        name="Text analysis",
         state=workflow_state,
         created_at=_FIXED_NOW,
         updated_at=_FIXED_NOW,
@@ -64,8 +64,8 @@ def _workflow_record(
                 id=1,
                 workflow_id=workflow_id,
                 sequence=1,
-                name="Fetch",
-                task_type="document.fetch",
+                name="Analyze submitted text",
+                task_type="text_analyze",
                 state=task_state,
                 retry_count=0,
                 result=None,
@@ -113,12 +113,8 @@ def test_create_workflow_returns_201_and_delegates_to_service() -> None:
             "/workflows",
             headers={"Authorization": "Bearer valid.token"},
             json={
-                "template_name": "document_processing",
-                "payload": {
-                    "document_name": "Q1 Statement",
-                    "source_uri": "s3://incoming/q1.pdf",
-                    "destination_uri": "s3://processed/q1.json",
-                },
+                "template_name": "text_analysis",
+                "payload": {"text": "Quarterly statement analysis."},
             },
         )
 
@@ -129,12 +125,8 @@ def test_create_workflow_returns_201_and_delegates_to_service() -> None:
     assert body["tasks"][0]["state"] == "created"
     workflow_svc.create_workflow.assert_called_once_with(
         user_id=_OWNER_ID,
-        template_name="document_processing",
-        payload={
-            "document_name": "Q1 Statement",
-            "source_uri": "s3://incoming/q1.pdf",
-            "destination_uri": "s3://processed/q1.json",
-        },
+        template_name="text_analysis",
+        payload={"text": "Quarterly statement analysis."},
     )
 
 
@@ -214,7 +206,7 @@ def test_workflow_write_endpoints_require_authentication() -> None:
     with TestClient(_app_with_services(current_user=None, workflow_service=workflow_svc)) as client:
         create_resp = client.post(
             "/workflows",
-            json={"template_name": "document_processing", "payload": {}},
+            json={"template_name": "text_analysis", "payload": {}},
         )
         run_resp = client.post("/workflows/1/run")
 
@@ -374,21 +366,13 @@ def test_workflow_create_and_run_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "document_processing",
-            "payload": {
-                "document_name": "Q1 Statement",
-                "source_uri": "s3://incoming/q1.pdf",
-                "destination_uri": "s3://processed/q1.json",
-            },
+            "template_name": "text_analysis",
+            "payload": {"text": "Quarterly statement analysis."},
         },
     )
     assert create_resp.status_code == 201
     assert create_resp.json()["state"] == "created"
-    assert [task["state"] for task in create_resp.json()["tasks"]] == [
-        "created",
-        "created",
-        "created",
-    ]
+    assert [task["state"] for task in create_resp.json()["tasks"]] == ["created"]
     workflow_id = create_resp.json()["id"]
 
     run_resp = authenticated_client.client.post(
@@ -406,12 +390,8 @@ def test_api_created_workflow_reaches_success_through_worker_path(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "document_processing",
-            "payload": {
-                "document_name": "Q4 Statement",
-                "source_uri": "s3://incoming/q4.pdf",
-                "destination_uri": "s3://processed/q4.json",
-            },
+            "template_name": "text_analysis",
+            "payload": {"text": "Revenue increased. Margin held steady."},
         },
     )
     assert create_resp.status_code == 201
@@ -425,7 +405,7 @@ def test_api_created_workflow_reaches_success_through_worker_path(
     queued_tasks = sorted(run_resp.json()["tasks"], key=lambda item: item["sequence"])
 
     for task in queued_tasks:
-        result = execute_task(task["id"], payload={})
+        result = execute_task(task["id"])
         assert result["status"] == "success"
 
     detail_resp = authenticated_client.client.get(
@@ -435,11 +415,7 @@ def test_api_created_workflow_reaches_success_through_worker_path(
     assert detail_resp.status_code == 200
     body = detail_resp.json()
     assert body["state"] == "success"
-    assert [task["state"] for task in body["tasks"]] == [
-        "success",
-        "success",
-        "success",
-    ]
+    assert [task["state"] for task in body["tasks"]] == ["success"]
 
 
 def test_workflow_run_publishes_first_task_once_in_real_stack(
@@ -448,7 +424,7 @@ def test_workflow_run_publishes_first_task_once_in_real_stack(
 ) -> None:
     dispatched_task_ids: list[int] = []
 
-    def _capture_enqueue(*, task_id: int, payload: dict[str, object] | None = None) -> str:
+    def _capture_enqueue(*, task_id: int) -> str:
         dispatched_task_ids.append(task_id)
         return f"queued-{task_id}"
 
@@ -461,12 +437,8 @@ def test_workflow_run_publishes_first_task_once_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "release_pipeline",
-            "payload": {
-                "service_name": "api",
-                "release_version": "2026.07.26",
-                "environment": "staging",
-            },
+            "template_name": "csv_summary",
+            "payload": {"csv_text": "name,score\nalpha,10"},
         },
     )
     assert create_resp.status_code == 201
@@ -494,12 +466,8 @@ def test_workflow_create_initializes_empty_logs_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "release_pipeline",
-            "payload": {
-                "service_name": "api",
-                "release_version": "2026.07.18",
-                "environment": "staging",
-            },
+            "template_name": "csv_summary",
+            "payload": {"csv_text": "name,score\nalpha,10"},
         },
     )
     assert create_resp.status_code == 201
@@ -511,7 +479,7 @@ def test_workflow_create_initializes_empty_logs_in_real_stack(
         headers=authenticated_client.auth_headers,
     )
 
-    assert body["name"] == "Deploy api 2026.07.18"
+    assert body["name"] == "CSV summary"
     assert body["tasks"][0]["retry_count"] == 0
     assert body["tasks"][0]["result"] is None
     assert logs_resp.status_code == 200
@@ -532,6 +500,45 @@ def test_create_workflow_returns_422_for_invalid_template_in_real_stack(
     assert "Unsupported workflow template" in resp.json()["detail"]
 
 
+def test_list_workflow_templates_uses_backend_registry(
+    authenticated_client: AuthenticatedClient,
+) -> None:
+    resp = authenticated_client.client.get(
+        "/workflows/templates",
+        headers=authenticated_client.auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == [
+        {
+            "name": "text_analysis",
+            "label": "Text Analysis",
+            "description": "Counts characters, words, and sentences in submitted text.",
+            "fields": [
+                {
+                    "key": "text",
+                    "label": "Text",
+                    "placeholder": "Paste text to analyze",
+                    "control": "textarea",
+                }
+            ],
+        },
+        {
+            "name": "csv_summary",
+            "label": "CSV Summary",
+            "description": "Counts rows and columns in submitted CSV data.",
+            "fields": [
+                {
+                    "key": "csv_text",
+                    "label": "CSV Data",
+                    "placeholder": "name,score\nalpha,10",
+                    "control": "textarea",
+                }
+            ],
+        },
+    ]
+
+
 def test_non_owner_cannot_run_workflow_in_real_stack(
     authenticated_client: AuthenticatedClient,
 ) -> None:
@@ -539,12 +546,8 @@ def test_non_owner_cannot_run_workflow_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "release_pipeline",
-            "payload": {
-                "service_name": "api",
-                "release_version": "2026.07.18",
-                "environment": "staging",
-            },
+            "template_name": "csv_summary",
+            "payload": {"csv_text": "name,score\nalpha,10"},
         },
     )
     assert create_resp.status_code == 201
@@ -581,12 +584,8 @@ def test_illegal_second_run_returns_409_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "document_processing",
-            "payload": {
-                "document_name": "Q3 Statement",
-                "source_uri": "s3://incoming/q3.pdf",
-                "destination_uri": "s3://processed/q3.json",
-            },
+            "template_name": "text_analysis",
+            "payload": {"text": "Quarterly statement analysis."},
         },
     )
     assert create_resp.status_code == 201
@@ -614,12 +613,8 @@ def test_workflow_read_endpoints_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "document_processing",
-            "payload": {
-                "document_name": "Q2 Statement",
-                "source_uri": "s3://incoming/q2.pdf",
-                "destination_uri": "s3://processed/q2.json",
-            },
+            "template_name": "text_analysis",
+            "payload": {"text": "Quarterly statement analysis."},
         },
     )
     assert create_resp.status_code == 201
@@ -671,12 +666,8 @@ def test_non_owner_cannot_read_workflow_in_real_stack(
         "/workflows",
         headers=authenticated_client.auth_headers,
         json={
-            "template_name": "release_pipeline",
-            "payload": {
-                "service_name": "api",
-                "release_version": "2026.07.18",
-                "environment": "staging",
-            },
+            "template_name": "csv_summary",
+            "payload": {"csv_text": "name,score\nalpha,10"},
         },
     )
     assert create_resp.status_code == 201

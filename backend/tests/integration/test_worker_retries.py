@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,13 +20,11 @@ class _DispatchRecorder:
         self,
         *,
         task_id: int,
-        payload: Mapping[str, object] | None = None,
         countdown_seconds: int | None = None,
     ) -> str:
         self.calls.append(
             {
                 "task_id": task_id,
-                "payload": payload,
                 "countdown_seconds": countdown_seconds,
             }
         )
@@ -53,7 +49,7 @@ def test_task_fail_then_retry_then_success(db_session: Session) -> None:
     db_session.commit()
 
     # First execution: handler raises → task goes back to QUEUED with retry_count=1.
-    result1 = execute_task(task.id, payload={})
+    result1 = execute_task(task.id)
 
     assert result1["status"] == "failed"
     assert result1["data"]["retry_scheduled"] is True
@@ -75,7 +71,7 @@ def test_task_fail_then_retry_then_success(db_session: Session) -> None:
     db_session.commit()
 
     # Second execution: task succeeds → workflow reaches SUCCESS.
-    result2 = execute_task(task.id, payload={"seconds": 1})
+    result2 = execute_task(task.id)
 
     assert result2["status"] == "success"
 
@@ -106,7 +102,7 @@ def test_retry_exhaustion_terminates_workflow(db_session: Session) -> None:
     db_session.commit()
 
     # Attempt 1 of 3: retry scheduled.
-    result1 = execute_task(task.id, payload={})
+    result1 = execute_task(task.id)
     assert result1["data"]["retry_scheduled"] is True
     assert result1["data"]["attempt"] == 1
 
@@ -115,7 +111,7 @@ def test_retry_exhaustion_terminates_workflow(db_session: Session) -> None:
     assert db_session.get(Task, task.id).retry_count == 1  # type: ignore[union-attr]
 
     # Attempt 2 of 3: retry scheduled.
-    result2 = execute_task(task.id, payload={})
+    result2 = execute_task(task.id)
     assert result2["data"]["retry_scheduled"] is True
     assert result2["data"]["attempt"] == 2
 
@@ -124,7 +120,7 @@ def test_retry_exhaustion_terminates_workflow(db_session: Session) -> None:
     assert db_session.get(Task, task.id).retry_count == 2  # type: ignore[union-attr]
 
     # Attempt 3 of 3: budget exhausted, terminal FAILED.
-    result3 = execute_task(task.id, payload={})
+    result3 = execute_task(task.id)
     assert result3["status"] == "failed"
     assert result3["data"]["retry_scheduled"] is False
     assert result3["data"]["attempt"] == 3
@@ -171,7 +167,7 @@ def test_duplicate_delivery_does_not_corrupt_terminal_state(db_session: Session)
     db_session.commit()
 
     # First delivery: normal success path.
-    result = execute_task(task.id, {"seconds": 1})
+    result = execute_task(task.id)
     assert result["status"] == "success"
 
     db_session.expire_all()
@@ -181,7 +177,7 @@ def test_duplicate_delivery_does_not_corrupt_terminal_state(db_session: Session)
     # Second delivery: must raise (cannot transition SUCCESS → RUNNING) without
     # committing any state change.
     with pytest.raises(ValueError, match="cannot transition"):
-        execute_task(task.id, {"seconds": 1})
+        execute_task(task.id)
 
     # State is unchanged after the duplicate delivery.
     db_session.expire_all()
@@ -213,13 +209,12 @@ def test_retryable_failure_schedules_same_task_with_backoff(
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload={})
+    result = execute_task(task.id)
     assert result["data"]["retry_scheduled"] is True
     assert result["data"]["next_backoff_seconds"] == 5
     assert recorder.calls == [
         {
             "task_id": task.id,
-            "payload": None,
             "countdown_seconds": 5,
         }
     ]
@@ -245,6 +240,6 @@ def test_terminal_failure_does_not_schedule_additional_dispatch(
     )
     db_session.commit()
 
-    result = execute_task(task.id, payload={})
+    result = execute_task(task.id)
     assert result["data"]["retry_scheduled"] is False
     assert recorder.calls == []
