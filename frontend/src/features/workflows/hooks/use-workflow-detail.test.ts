@@ -57,7 +57,7 @@ describe("useWorkflowDetail", () => {
   })
 
   it("calls runWorkflow and updates workflow state", async () => {
-    const initial = { ...baseWorkflow, state: "completed" as const }
+    const initial = { ...baseWorkflow, state: "success" as const }
     const afterRun = { ...baseWorkflow, state: "queued" as const }
     vi.spyOn(api, "getWorkflow").mockResolvedValue(initial)
     const runSpy = vi.spyOn(api, "runWorkflow").mockResolvedValue(afterRun)
@@ -76,7 +76,7 @@ describe("useWorkflowDetail", () => {
   })
 
   it("sets runError when runWorkflow fails", async () => {
-    vi.spyOn(api, "getWorkflow").mockResolvedValue({ ...baseWorkflow, state: "completed" as const })
+    vi.spyOn(api, "getWorkflow").mockResolvedValue({ ...baseWorkflow, state: "success" as const })
     vi.spyOn(api, "runWorkflow").mockRejectedValue({
       code: "CONFLICT",
       description: "Already running.",
@@ -120,7 +120,7 @@ describe("useWorkflowDetail", () => {
 
   it("stops polling when workflow reaches a terminal state", async () => {
     vi.useFakeTimers()
-    const completedWorkflow = { ...baseWorkflow, state: "completed" as const }
+    const completedWorkflow = { ...baseWorkflow, state: "success" as const }
     const getWorkflowSpy = vi.spyOn(api, "getWorkflow").mockResolvedValue(completedWorkflow)
 
     renderHook(() => useWorkflowDetail(1))

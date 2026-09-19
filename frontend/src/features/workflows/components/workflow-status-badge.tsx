@@ -6,30 +6,19 @@ function normalizeState(value: string): string {
   return value.trim().toLowerCase()
 }
 
-const STATE_LABELS: Record<string, string> = {
-  pending: "PENDING",
-  created: "PENDING",
-  queued: "PENDING",
-  running: "RUNNING",
-  completed: "COMPLETED",
-  success: "COMPLETED",
-  failed: "FAILED",
-  cancelled: "CANCELLED",
-}
-
 export function WorkflowStatusBadge({ state }: { state: WorkflowState | string }) {
   const normalized = normalizeState(state)
-  const label = STATE_LABELS[normalized] ?? state.toUpperCase()
+  const label = normalized.toUpperCase()
 
-  if (label === "PENDING") {
+  if (normalized === "created" || normalized === "queued") {
     return <Badge variant="secondary">{label}</Badge>
   }
 
-  if (label === "RUNNING") {
+  if (normalized === "running") {
     return <Badge variant="default">{label}</Badge>
   }
 
-  if (label === "COMPLETED") {
+  if (normalized === "success") {
     return (
       <Badge className={cn("bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200")}>
         {label}
@@ -37,7 +26,7 @@ export function WorkflowStatusBadge({ state }: { state: WorkflowState | string }
     )
   }
 
-  if (label === "FAILED") {
+  if (normalized === "failed") {
     return <Badge variant="destructive">{label}</Badge>
   }
 

@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import type { BaseSyntheticEvent } from "react"
 import type { UseFormReturn } from "react-hook-form"
 import type { CreateWorkflowSchema } from "../schemas/create-workflow.schema"
@@ -89,14 +90,15 @@ export function CreateWorkflowForm({
 
           {selectedTemplate?.fields.map((field) => {
             const fieldError = errors[field.key as keyof CreateWorkflowSchema]
+            const FieldControl = field.control === "textarea" ? Textarea : Input
             return (
               <div key={field.key} className="space-y-1.5">
                 <Label htmlFor={field.key}>{field.label}</Label>
-                <Input
+                <FieldControl
                   id={field.key}
                   placeholder={field.placeholder}
                   aria-invalid={!!fieldError}
-                  {...register(field.key as keyof CreateWorkflowSchema)}
+                  {...register(field.key)}
                 />
                 {fieldError && <p className="text-sm text-destructive">{fieldError.message}</p>}
               </div>

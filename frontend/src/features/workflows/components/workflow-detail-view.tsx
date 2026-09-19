@@ -26,6 +26,7 @@ export function WorkflowDetailView({
 }: WorkflowDetailViewProps) {
   // True when workflow is actively queued or running (not yet terminal, not in initial created state).
   const isProcessing = !isTerminal(workflow.state) && workflow.state !== "created"
+  const canRun = workflow.state === "created"
 
   return (
     <div className="space-y-6">
@@ -55,7 +56,7 @@ export function WorkflowDetailView({
           <div className="flex items-center gap-3">
             <Button
               onClick={onRun}
-              disabled={isRunning || isProcessing}
+              disabled={isRunning || !canRun}
               size="sm"
               aria-label="Run workflow"
             >
@@ -63,9 +64,9 @@ export function WorkflowDetailView({
               {isRunning ? "Starting…" : "Run"}
             </Button>
 
-            {!isProcessing && !isRunning && (
+            {isTerminal(workflow.state) && (
               <p className="text-xs text-muted-foreground">
-                Workflow is in a terminal state. Run to dispatch a fresh execution.
+                This execution is complete and cannot be started again.
               </p>
             )}
 

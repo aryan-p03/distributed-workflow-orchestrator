@@ -4,6 +4,15 @@ import { useTaskLogs } from "../hooks/use-task-logs"
 import { WorkflowStatusBadge } from "./workflow-status-badge"
 import type { WorkflowTask } from "../types/workflow.types"
 
+function formatTaskResult(result: string): string {
+  try {
+    const parsed = JSON.parse(result) as unknown
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return result
+  }
+}
+
 function TaskLogSection({
   workflowId,
   task,
@@ -24,6 +33,15 @@ function TaskLogSection({
         <WorkflowStatusBadge state={task.state} />
       </div>
       <p className="text-xs text-muted-foreground">{task.task_type}</p>
+
+      {task.result && (
+        <div className="space-y-1 rounded-md border bg-background p-3">
+          <p className="text-xs font-medium">Result</p>
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs font-mono">
+            {formatTaskResult(task.result)}
+          </pre>
+        </div>
+      )}
 
       {isLoading && (
         <div className="space-y-1 pt-1" aria-label="Loading task logs">

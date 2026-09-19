@@ -1,12 +1,4 @@
-export type WorkflowState =
-  | "created"
-  | "queued"
-  | "running"
-  | "success"
-  | "failed"
-  | "pending"
-  | "completed"
-  | "cancelled"
+export type WorkflowState = "created" | "queued" | "running" | "success" | "failed"
 
 export interface WorkflowSummary {
   id: number
@@ -81,6 +73,7 @@ export interface WorkflowTemplateField {
   key: string
   label: string
   placeholder: string
+  control: "input" | "textarea"
 }
 
 export interface WorkflowTemplateDefinition {

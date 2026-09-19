@@ -7,17 +7,12 @@ import { createWorkflowSchema, type CreateWorkflowSchema } from "../schemas/crea
 import type { APIError } from "@/lib/api/errors"
 import type { WorkflowTemplateDefinition } from "../types/workflow.types"
 
-function buildPayload(data: CreateWorkflowSchema): Record<string, string> {
+function buildPayload(
+  data: CreateWorkflowSchema,
+  template: WorkflowTemplateDefinition
+): Record<string, string> {
   const payload: Record<string, string> = {}
-  const allFields: Array<keyof CreateWorkflowSchema> = [
-    "workflow_name",
-    "document_name",
-    "source_uri",
-    "destination_uri",
-    "service_name",
-    "release_version",
-    "environment",
-  ]
+  const allFields = ["workflow_name", ...template.fields.map((field) => field.key)]
 
   for (const key of allFields) {
     const value = data[key]
@@ -41,18 +36,13 @@ export function useCreateWorkflow() {
   const form = useForm<CreateWorkflowSchema>({
     resolver: zodResolver(createWorkflowSchema),
     defaultValues: {
-      template_name: "document_processing",
+      template_name: "",
       workflow_name: "",
-      document_name: "",
-      source_uri: "",
-      destination_uri: "",
-      service_name: "",
-      release_version: "",
-      environment: "",
     },
   })
 
   const selectedTemplateName = useWatch({ control: form.control, name: "template_name" })
+  const { getValues, setValue } = form
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.name === selectedTemplateName) ?? null,
@@ -65,27 +55,49 @@ export function useCreateWorkflow() {
       try {
         const nextTemplates = await getWorkflowTemplates()
         setTemplates(nextTemplates)
+        if (!getValues("template_name") && nextTemplates[0]) {
+          setValue("template_name", nextTemplates[0].name)
+        }
+        setServerError(null)
+      } catch (err) {
+        const apiErr = err as APIError
+        setServerError(apiErr.description ?? "Failed to load workflow templates.")
       } finally {
         setIsLoadingTemplates(false)
       }
     }
 
     void loadTemplates()
-  }, [])
+  }, [getValues, setValue])
 
   async function onSubmit(data: CreateWorkflowSchema) {
     setServerError(null)
 
+    if (selectedTemplate === null) {
+      form.setError("template_name", { message: "Select a supported template." })
+      return
+    }
+
+    let hasMissingField = false
+    for (const field of selectedTemplate.fields) {
+      const value = data[field.key]
+      if (typeof value !== "string" || value.trim().length === 0) {
+        form.setError(field.key, { message: "This field is required." })
+        hasMissingField = true
+      }
+    }
+    if (hasMissingField) return
+
     try {
       const created = await createWorkflow({
         template_name: data.template_name,
-        payload: buildPayload(data),
+        payload: buildPayload(data, selectedTemplate),
       })
       navigate(`/workflows/${created.id}`)
     } catch (err) {
       const apiErr = err as APIError
       if (apiErr.source?.type === "field") {
-        form.setError(apiErr.source.name as keyof CreateWorkflowSchema, {
+        form.setError(apiErr.source.name, {
           message: apiErr.description,
         })
       } else {

@@ -3,9 +3,9 @@ import { render, screen } from "@testing-library/react"
 import { WorkflowStatusBadge } from "./workflow-status-badge"
 
 describe("WorkflowStatusBadge", () => {
-  it("maps backend success state to COMPLETED label", () => {
+  it("renders the backend SUCCESS label", () => {
     render(<WorkflowStatusBadge state="success" />)
-    expect(screen.getByText("COMPLETED")).toBeInTheDocument()
+    expect(screen.getByText("SUCCESS")).toBeInTheDocument()
   })
 
   it("renders FAILED label for failed state", () => {
@@ -13,8 +13,8 @@ describe("WorkflowStatusBadge", () => {
     expect(screen.getByText("FAILED")).toBeInTheDocument()
   })
 
-  it("renders PENDING label for created state", () => {
+  it("renders CREATED label for created state", () => {
     render(<WorkflowStatusBadge state="created" />)
-    expect(screen.getByText("PENDING")).toBeInTheDocument()
+    expect(screen.getByText("CREATED")).toBeInTheDocument()
   })
 })
