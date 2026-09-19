@@ -34,9 +34,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgresql://${DB_USER:-dwo_user}:${DB_PASSWORD:-dwo_password}@postgres:5432/${DB_NAME:-dwo}
       REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SCHEMA_SYNC_ON_STARTUP: ${SCHEMA_SYNC_ON_STARTUP:-true}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_SECONDS: ${JWT_EXPIRES_SECONDS:-3600}
+      TASK_RECOVERY_STALE_SECONDS: ${TASK_RECOVERY_STALE_SECONDS:-900}
     command:
       [
         "sh",
@@ -64,9 +70,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgresql://${DB_USER:-dwo_user}:${DB_PASSWORD:-dwo_password}@postgres:5432/${DB_NAME:-dwo}
       REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CELERY_LOG_LEVEL: ${CELERY_LOG_LEVEL:-INFO}
+      TASK_RECOVERY_STALE_SECONDS: ${TASK_RECOVERY_STALE_SECONDS:-900}
     command:
       [
         "sh",
@@ -89,7 +98,7 @@ services:
       dockerfile: Dockerfile.dev
     environment:
       FRONTEND_PORT: ${FRONTEND_PORT:-5173}
-      VITE_API_BASE_URL: http://localhost:${API_PORT:-8000}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:${API_PORT:-8000}}
     command: ["sh", "-c", "npm run dev -- --host 0.0.0.0 --port ${FRONTEND_PORT:-5173}"]
     volumes:
       - ./frontend:/app

@@ -30,6 +30,8 @@ make up-build
 
 If the default ports and local credentials work for you, you can skip creating `.env` and run the stack as-is.
 
+The frontend reads `VITE_API_BASE_URL` at build/start time. Compose sets it from `API_PORT` by default; set it in `.env` when the browser must reach the API at a different URL.
+
 **Services:**
 
 | Service | URL |
