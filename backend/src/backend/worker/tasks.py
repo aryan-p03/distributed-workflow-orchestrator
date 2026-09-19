@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any, cast
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.application.services.stale_task_recovery_service import StaleTaskRecoveryService
 from backend.application.services.task_execution_service import TaskExecutionService
 from backend.application.services.workflow_progression_service import WorkflowProgressionService
 from backend.domain.workflow_state import TaskState
@@ -19,6 +21,24 @@ from backend.worker.handlers import dispatch_task_handler
 @celery_app.task(name="worker.ping")  # type: ignore[untyped-decorator]
 def ping() -> str:
     return "pong"
+
+
+@celery_app.task(name="worker.recover_stale_tasks")  # type: ignore[untyped-decorator]
+def recover_stale_tasks() -> dict[str, Any]:
+    settings = get_settings()
+    session: Session = _new_session()
+    try:
+        recovery_service = StaleTaskRecoveryService(
+            session,
+            stale_after_seconds=settings.task_recovery_stale_seconds,
+        )
+        recovered_task_ids = recovery_service.recover(now=datetime.now(UTC))
+        session.commit()
+        for task_id in recovered_task_ids:
+            enqueue_task_execution(task_id=task_id, payload=None)
+        return {"status": "success", "recovered_task_ids": recovered_task_ids}
+    finally:
+        session.close()
 
 
 @celery_app.task(name="worker.execute_task")  # type: ignore[untyped-decorator]

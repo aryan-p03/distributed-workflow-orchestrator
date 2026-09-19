@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.domain.workflow_state import TaskState, WorkflowState
 from backend.infrastructure.db.models import Task, TaskLog, Workflow
-from backend.worker.tasks import execute_task
+from backend.worker.tasks import execute_task, recover_stale_tasks
 from tests.factories import create_task, create_user, create_workflow
 
 
@@ -280,3 +281,84 @@ def test_execute_task_does_not_dispatch_after_terminal_failure(
     assert result["data"]["retry_scheduled"] is False
 
     assert recorder.calls == []
+
+
+def test_recover_stale_tasks_requeues_only_eligible_tasks(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _DispatchRecorder()
+    monkeypatch.setattr("backend.worker.tasks.enqueue_task_execution", recorder)
+
+    user = create_user(db_session, email="recovery@example.com", username="recovery")
+    workflow = create_workflow(db_session, user_id=user.id, state=WorkflowState.RUNNING)
+    stale_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        name="Stale task",
+        task_type="delay",
+        state=TaskState.RUNNING,
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    fresh_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=2,
+        name="Fresh task",
+        task_type="delay",
+        state=TaskState.RUNNING,
+        updated_at=datetime.now(UTC),
+    )
+    terminal_task = create_task(
+        db_session,
+        workflow_id=workflow.id,
+        sequence=3,
+        name="Completed task",
+        task_type="delay",
+        state=TaskState.SUCCESS,
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    db_session.commit()
+
+    result = recover_stale_tasks()
+
+    assert result == {"status": "success", "recovered_task_ids": [stale_task.id]}
+    assert recorder.calls == [
+        {
+            "task_id": stale_task.id,
+            "payload": None,
+            "countdown_seconds": None,
+        }
+    ]
+
+    db_session.expire_all()
+    persisted_stale = db_session.get(Task, stale_task.id)
+    persisted_fresh = db_session.get(Task, fresh_task.id)
+    persisted_terminal = db_session.get(Task, terminal_task.id)
+    assert persisted_stale is not None
+    assert persisted_fresh is not None
+    assert persisted_terminal is not None
+    assert persisted_stale.state == TaskState.QUEUED
+    assert persisted_fresh.state == TaskState.RUNNING
+    assert persisted_terminal.state == TaskState.SUCCESS
+
+    logs = list(
+        db_session.execute(
+            select(TaskLog).where(TaskLog.task_id == stale_task.id).order_by(TaskLog.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    assert len(logs) == 1
+    assert logs[0].level == "WARNING"
+    assert "recovered" in logs[0].message
+
+    second_result = recover_stale_tasks()
+    assert second_result == {"status": "success", "recovered_task_ids": []}
+    assert recorder.calls == [
+        {
+            "task_id": stale_task.id,
+            "payload": None,
+            "countdown_seconds": None,
+        }
+    ]

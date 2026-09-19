@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = Field(default="change-me-in-production", validation_alias="JWT_SECRET")
     jwt_expires_seconds: int = Field(default=3600, validation_alias="JWT_EXPIRES_SECONDS")
+    task_recovery_stale_seconds: int = Field(
+        default=900,
+        validation_alias="TASK_RECOVERY_STALE_SECONDS",
+    )
 
 
 @lru_cache(maxsize=1)

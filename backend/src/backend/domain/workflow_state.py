@@ -45,3 +45,7 @@ def can_transition_workflow(current: WorkflowState, target: WorkflowState) -> bo
 
 def can_transition_task(current: TaskState, target: TaskState) -> bool:
     return target in _TASK_TRANSITIONS[current]
+
+
+def can_recover_task(current: TaskState, target: TaskState) -> bool:
+    return current == TaskState.RUNNING and target == TaskState.QUEUED
